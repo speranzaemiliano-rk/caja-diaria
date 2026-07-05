@@ -1043,7 +1043,7 @@ function openEditor(existing){
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
   }
-  edState=m;
+  edState=m;edState.loans=[];
   const symLabel=CUR_SYM[CUR];
   document.getElementById('editor').innerHTML=`
     <div class="ed-head"><div class="ei">${existing?'✎':'＋'}</div>
@@ -1069,6 +1069,18 @@ function openEditor(existing){
         <div class="field"><label>Caja real / conteo físico (${symLabel}) — opcional</label><input class="amt" id="f_fis" value="${m.fis}" placeholder="dejar vacío si no aplica"></div>
         <div class="field"><label>Cheques / valores (${symLabel}) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
       </div>
+      <div class="ed-sub" style="margin-top:20px">⇄ Préstamo entre empresas <div class="ln2"></div></div>
+      <div id="edLoanBox" class="loanbox" style="background:var(--panel2,rgba(127,127,127,.05));border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px">
+        <div class="es" style="margin:0 0 12px">Opcional. Genera un <b>egreso en esta caja</b> (${esc(ctxLabel(activeContext()))} · ${symLabel}) y un <b>ingreso</b> en la empresa/proyecto destino, con la fecha de este día.</div>
+        <div class="fgrid" style="grid-template-columns:1.4fr .9fr 1.2fr auto;align-items:end;gap:10px">
+          <div class="field"><label>Destino</label><select class="sel" id="ed_loanTo"></select></div>
+          <div class="field"><label>Importe (${symLabel})</label><input class="amt" id="ed_loanAmt" placeholder="0"></div>
+          <div class="field"><label>Nota — opcional</label><input id="ed_loanNote" placeholder="Ej: adelanto insumos"></div>
+          <button class="addrow" id="ed_loanAdd" type="button" style="margin:0;height:44px;white-space:nowrap">＋ Sumar</button>
+        </div>
+        <div id="ed_loanErr" class="errline" style="margin-top:6px"></div>
+        <div id="ed_loanList" style="margin-top:8px"></div>
+      </div>
       <div id="edErr" class="errline" style="margin-top:10px"></div>
     </div>
     <div class="ed-foot">
@@ -1081,7 +1093,40 @@ function openEditor(existing){
   document.getElementById('f_si').addEventListener('input',recalcEditor);
   document.getElementById('addRow').onclick=()=>{edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   document.getElementById('saveDay').onclick=saveDay;
+  renderEdLoanSelect();renderEdLoans();
+  const elAdd=document.getElementById('ed_loanAdd');
+  if(elAdd)elAdd.onclick=()=>{
+    const errEl=document.getElementById('ed_loanErr');errEl.textContent='';
+    const to=document.getElementById('ed_loanTo').value;
+    const amt=num(document.getElementById('ed_loanAmt').value);
+    const note=document.getElementById('ed_loanNote').value.trim();
+    if(!to){errEl.textContent='Elegí una empresa/proyecto destino.';return}
+    if(amt==null||amt<=0){errEl.textContent='Ingresá un importe válido.';return}
+    edState.loans.push({to,amt,note});
+    document.getElementById('ed_loanAmt').value='';document.getElementById('ed_loanNote').value='';
+    renderEdLoans();recalcEditor();
+  };
   document.getElementById('edOverlay').classList.add('on');document.body.style.overflow='hidden';
+}
+function renderEdLoanSelect(){
+  const sel=document.getElementById('ed_loanTo');if(!sel)return;
+  const others=contexts.filter(c=>c.id!==activeContextId);
+  const box=document.getElementById('edLoanBox');
+  if(!others.length){if(box)box.innerHTML='<div class="es" style="margin:0">Para registrar un préstamo necesitás al menos otra empresa o proyecto cargado en la app.</div>';return}
+  const empresas=[...new Set(others.map(c=>c.empresa))];
+  sel.innerHTML=empresas.map(emp=>'<optgroup label="'+esc(emp)+'">'+others.filter(c=>c.empresa===emp).map(c=>`<option value="${c.id}">${esc(c.proyecto)}</option>`).join('')+'</optgroup>').join('');
+}
+function renderEdLoans(){
+  const el=document.getElementById('ed_loanList');if(!el)return;
+  if(!edState.loans||!edState.loans.length){el.innerHTML='';return}
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:6px">'+edState.loans.map((l,i)=>{
+    const dest=contexts.find(c=>c.id===l.to);
+    return `<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--panel,rgba(127,127,127,.06));border:1px solid var(--line);border-radius:9px;padding:8px 12px">
+      <span style="font-size:13px">⇄ ${esc(dest?ctxLabel(dest):l.to)} · <b class="mono">${CUR_SYM[CUR]} ${fmtAR.format(Math.round(l.amt))}</b>${l.note?' · <span style="color:var(--ink3)">'+esc(l.note)+'</span>':''}</span>
+      <button class="rmrow" type="button" data-i="${i}" title="Quitar préstamo">✕</button>
+    </div>`;
+  }).join('')+'</div>';
+  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{edState.loans.splice(+b.dataset.i,1);renderEdLoans();recalcEditor()});
 }
 function renderMovRows(){
   const list=document.getElementById('mvList');
@@ -1135,10 +1180,13 @@ function computeEditor(){
 }
 function recalcEditor(){
   const c=computeEditor();
+  const loanTot=(edState.loans||[]).reduce((s,l)=>s+(+l.amt||0),0);
+  const egr=Math.round((c.egr-loanTot)*100)/100;
+  const sf=Math.round((c.sf-loanTot)*100)/100;
   document.getElementById('s_in').textContent=peso(c.ing);
-  document.getElementById('s_out').textContent=pesoS(c.egr);
-  const net=c.ing+c.egr,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
-  document.getElementById('s_sf').textContent=peso(c.sf);
+  document.getElementById('s_out').textContent=pesoS(egr);
+  const net=Math.round((c.ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
+  document.getElementById('s_sf').textContent=peso(sf);
 }
 function saveDay(){
   const c=computeEditor(),iso=document.getElementById('f_date').value,err=document.getElementById('edErr');
@@ -1174,8 +1222,15 @@ function saveDay(){
   }
   cascadeChain(activeContextId,CUR,userDays);
   saveUser();openMonths.add(y+'-'+String(mo).padStart(2,'0'));
+  // Préstamos entre empresas cargados en este día: origen = caja activa.
+  // registerLoan agrega el egreso a este día (recién guardado) y el ingreso al destino.
+  const pendingLoans=(edState.loans||[]).slice();
+  if(pendingLoans.length){
+    const fromCtx=activeContext();
+    pendingLoans.forEach(l=>{const toCtx=contexts.find(c=>c.id===l.to);if(toCtx)registerLoan(fromCtx,toCtx,CUR,+l.amt,l.note,iso)});
+  }
   const wasEdit=!!editIso;closeEditor();renderAll();
-  toast(wasEdit?'Día actualizado':'Día agregado correctamente');
+  toast(pendingLoans.length?((wasEdit?'Día actualizado':'Día agregado')+' + '+pendingLoans.length+' préstamo(s) registrado(s)'):(wasEdit?'Día actualizado':'Día agregado correctamente'));
   setTimeout(()=>openDayIso(iso),120);
 }
 function deleteDay(iso){
