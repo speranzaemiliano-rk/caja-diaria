@@ -72,7 +72,10 @@ body{
 .nav-btn.on{background:linear-gradient(90deg,rgba(212,166,74,.16),rgba(212,166,74,.02));color:var(--gold2);box-shadow:inset 2px 0 0 var(--gold)}
 .side-foot{margin-top:auto;font-size:11px;color:var(--ink3);padding:12px 8px;border-top:1px solid var(--line)}
 .ctxsel-wrap{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-.ctxsel-wrap select{width:100%}
+.ctxrow{display:flex;gap:6px;align-items:center}
+.ctxrow select{flex:1;min-width:0}
+.ctxicon{flex:0 0 auto;width:34px;height:34px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--ink2);font-size:13px;cursor:pointer;transition:.15s}
+.ctxicon:hover{border-color:var(--gold);color:var(--gold2)}
 #cajaSeg{width:100%;margin-bottom:16px}
 #cajaSeg button{flex:1}
 
@@ -279,8 +282,16 @@ tbody tr:last-child td{border-bottom:none}
     </div>
     <div class="nav-label">Empresa / Proyecto</div>
     <div class="ctxsel-wrap">
-      <select class="sel" id="ctxEmpresaSel"></select>
-      <select class="sel" id="ctxProyectoSel"></select>
+      <div class="ctxrow">
+        <select class="sel" id="ctxEmpresaSel"></select>
+        <button class="ctxicon" id="ctxEmpresaEdit" title="Renombrar empresa">✎</button>
+        <button class="ctxicon" id="ctxEmpresaDel" title="Eliminar empresa">🗑</button>
+      </div>
+      <div class="ctxrow">
+        <select class="sel" id="ctxProyectoSel"></select>
+        <button class="ctxicon" id="ctxProyectoEdit" title="Renombrar proyecto">✎</button>
+        <button class="ctxicon" id="ctxProyectoDel" title="Eliminar proyecto">🗑</button>
+      </div>
     </div>
     <div class="nav-label">Caja</div>
     <div class="seg" id="cajaSeg">
@@ -292,6 +303,7 @@ tbody tr:last-child td{border-bottom:none}
     <button class="nav-btn" data-v="index"><span class="ic">▤</span> Movimientos diarios</button>
     <button class="nav-btn" data-v="analytics"><span class="ic">◔</span> Análisis</button>
     <button class="nav-btn" data-v="search"><span class="ic">⌕</span> Buscar movimientos</button>
+    <button class="nav-btn" data-v="loans"><span class="ic">⇄</span> Préstamos</button>
     <div class="side-foot">
       <div id="footRange">—</div>
       <div id="savedCount" style="margin-top:6px;color:var(--gold2);font-weight:600"></div>
@@ -309,6 +321,7 @@ tbody tr:last-child td{border-bottom:none}
       <div class="ticker" id="ticker"></div>
       <div class="actions">
         <button class="btn-ghost" id="installBtn" style="display:none" title="Instalar la app en este dispositivo">⇩ Instalar app</button>
+        <button class="btn-ghost" id="emailBackupBtn" title="Configurar respaldo diario automático por email">✉ Backup diario</button>
         <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo">⤓ Respaldo</button>
         <button class="btn-primary" id="newDayBtn">＋ Nuevo día</button>
       </div>
@@ -398,6 +411,33 @@ tbody tr:last-child td{border-bottom:none}
           <div style="overflow:auto;max-height:70vh"><table id="movTable"></table></div>
         </div>
         <p class="note" id="movCount"></p>
+      </section>
+
+      <!-- LOANS -->
+      <section class="view" id="v-loans">
+        <div class="panel">
+          <div class="ph"><div><h3>Registrar préstamo / transferencia</h3><p>Mueve saldo entre empresas y proyectos — genera un egreso en origen y un ingreso en destino, en la misma moneda</p></div></div>
+          <div class="fgrid" style="grid-template-columns:1fr 1fr 110px 1fr;margin-bottom:0">
+            <div class="field"><label>Origen</label><select class="sel" id="loanFrom"></select></div>
+            <div class="field"><label>Destino</label><select class="sel" id="loanTo"></select></div>
+            <div class="field"><label>Moneda</label><select class="sel" id="loanCur"><option value="ARS">$ ARS</option><option value="USD">US$</option></select></div>
+            <div class="field"><label>Importe</label><input class="amt" id="loanAmt" placeholder="0"></div>
+          </div>
+          <div class="fgrid" style="grid-template-columns:1fr 160px;margin-top:14px">
+            <div class="field"><label>Concepto / nota — opcional</label><input id="loanNote" placeholder="Ej: adelanto para insumos"></div>
+            <div class="field"><label>Fecha</label><input type="date" id="loanDate"></div>
+          </div>
+          <div id="loanErr" class="errline" style="margin-top:4px"></div>
+          <button class="btn-primary" id="loanSubmit" style="margin-top:16px">⇄ Registrar préstamo</button>
+        </div>
+        <div class="panel" style="margin-top:18px">
+          <div class="ph"><div><h3>Saldos entre empresas / proyectos</h3><p>Neto de préstamos no saldados por par y moneda</p></div></div>
+          <div id="loanBalances"></div>
+        </div>
+        <div class="panel" style="margin-top:18px">
+          <div class="ph"><div><h3>Historial de préstamos</h3><p>Todos los movimientos registrados entre cajas</p></div></div>
+          <div style="overflow:auto"><table id="loanTable"></table></div>
+        </div>
       </section>
     </div>
   </div>
@@ -537,8 +577,50 @@ document.querySelectorAll('#cajaSeg button').forEach(b=>{
   };
 });
 
+/* ============ edit / delete empresa & proyecto ============ */
+function removeContextStorage(ctxId){
+  try{localStorage.removeItem('caja_user_days_v2::'+ctxId+'::ARS');localStorage.removeItem('caja_user_days_v2::'+ctxId+'::USD')}catch(e){}
+}
+document.getElementById('ctxEmpresaEdit').onclick=()=>{
+  const cur=activeContext(),oldName=cur.empresa;
+  const name=(prompt('Nuevo nombre para la empresa "'+oldName+'":',oldName)||'').trim();
+  if(!name||name===oldName)return;
+  contexts.forEach(c=>{if(c.empresa===oldName)c.empresa=name});
+  saveContexts();renderCtxSelectors();toast('Empresa renombrada a "'+name+'"');
+};
+document.getElementById('ctxProyectoEdit').onclick=()=>{
+  const cur=activeContext(),oldName=cur.proyecto;
+  const name=(prompt('Nuevo nombre para el proyecto "'+oldName+'":',oldName)||'').trim();
+  if(!name||name===oldName)return;
+  cur.proyecto=name;saveContexts();renderCtxSelectors();toast('Proyecto renombrado a "'+name+'"');
+};
+document.getElementById('ctxEmpresaDel').onclick=()=>{
+  const cur=activeContext(),name=cur.empresa;
+  const group=contexts.filter(c=>c.empresa===name);
+  if(group.length===contexts.length){alert('No podés eliminar la única empresa cargada.');return}
+  if(!confirm(`Eliminar la empresa "${name}" y sus ${group.length} proyecto(s)?\n\nSe borran también todos los días y movimientos cargados (ARS y USD) de esos proyectos. Esta acción no se puede deshacer.`))return;
+  const ids=new Set(group.map(c=>c.id));
+  contexts=contexts.filter(c=>!ids.has(c.id));
+  group.forEach(c=>removeContextStorage(c.id));
+  loans=loans.filter(l=>!ids.has(l.from.id)&&!ids.has(l.to.id));saveLoans();
+  saveContexts();
+  switchContext(contexts[0].id);
+  toast('Empresa "'+name+'" eliminada');
+};
+document.getElementById('ctxProyectoDel').onclick=()=>{
+  const cur=activeContext();
+  if(contexts.length<=1){alert('No podés eliminar el único proyecto cargado.');return}
+  if(!confirm(`Eliminar el proyecto "${cur.proyecto}" (${cur.empresa})?\n\nSe borran también todos los días y movimientos cargados (ARS y USD). Esta acción no se puede deshacer.`))return;
+  contexts=contexts.filter(c=>c.id!==cur.id);
+  removeContextStorage(cur.id);
+  loans=loans.filter(l=>l.from.id!==cur.id&&l.to.id!==cur.id);saveLoans();
+  saveContexts();
+  switchContext(contexts[0].id);
+  toast('Proyecto "'+cur.proyecto+'" eliminado');
+};
+
 /* ============ navigation ============ */
-const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales']};
+const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales'],loans:['Préstamos','Transferencias entre empresas y proyectos']};
 let currentView='dash';
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('on'));b.classList.add('on');
@@ -549,6 +631,7 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
   document.getElementById('vSub').textContent=TITLES[currentView][1];
   document.getElementById('side').classList.remove('show');
   if(currentView==='dash')drawLine(currentRange);
+  if(currentView==='loans')renderLoans();
 });
 
 /* ============ RENDER ALL ============ */
@@ -777,6 +860,113 @@ function dl(name,content,type){const b=new Blob([content],{type});const u=URL.cr
 document.getElementById('expIdx').onclick=()=>{let c='Fecha;Dia;Saldo Inicial;Ingresos;Egresos;Saldo Final;Movimientos;Diferencia\n';real.forEach(d=>c+=`${d.date};${d.wd};${d.si||0};${d.ing||0};${d.egr||0};${d.sf||0};${d.nmov};${d.dif||0}\n`);dl('resumen_diario.csv','\ufeff'+c,'text/csv;charset=utf-8')};
 document.getElementById('expMov').onclick=()=>{let c='Fecha;Importe;Concepto;Referencia\n';real.forEach(d=>d.movs.forEach(m=>c+=`${d.date};${m.imp};${(m.cpt||'').replace(/;/g,',')};${(m.ref||'').replace(/;/g,',')}\n`));dl('movimientos_detalle.csv','\ufeff'+c,'text/csv;charset=utf-8')};
 
+/* ============ LOANS (préstamos entre empresas/proyectos) ============ */
+function todayIso(){return new Date().toISOString().slice(0,10)}
+const LOANS_KEY='caja_loans_v1';
+function loadLoans(){try{const r=localStorage.getItem(LOANS_KEY);return r?JSON.parse(r):[]}catch(e){return []}}
+function saveLoans(){try{localStorage.setItem(LOANS_KEY,JSON.stringify(loans))}catch(e){}}
+let loans=loadLoans();
+function ctxLabel(c){return c.empresa+' / '+c.proyecto}
+function loadUserDaysFor(ctxId,cur){try{const r=localStorage.getItem('caja_user_days_v2::'+ctxId+'::'+cur);return r?JSON.parse(r):[]}catch(e){return []}}
+function saveUserDaysFor(ctxId,cur,arr){try{localStorage.setItem('caja_user_days_v2::'+ctxId+'::'+cur,JSON.stringify(arr))}catch(e){}}
+function baseForCtx(ctxId,cur){return (ctxId==='default'&&cur==='ARS')?BASE_SEED:[]}
+function applyLoanMovement(ctxId,cur,iso,imp,cpt,ref){
+  const ud=loadUserDaysFor(ctxId,cur);
+  const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
+  const existing=map[iso];
+  let day;
+  if(existing){
+    day={...existing,src:'user',movs:existing.movs.slice()};
+  }else{
+    const allDays=Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+    const prevReal=allDays.filter(d=>!d.empty).slice(-1)[0];
+    const si=prevReal?prevReal.sf:0;
+    const[y,mo,dd]=iso.split('-').map(Number);
+    day={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
+      si,sf:si,ing:0,egr:0,nmov:0,dif:null,fis:null,chq:null,empty:false,caja:[],movs:[]};
+  }
+  day.movs.push({imp,cpt,ref});
+  day.empty=false;
+  day.ing=day.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0);
+  day.egr=day.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0);
+  day.nmov=day.movs.length;
+  day.sf=Math.round((day.si+day.ing+day.egr)*100)/100;
+  day.dif=day.fis!=null?Math.round((day.sf-day.fis)*100)/100:null;
+  const idx=ud.findIndex(d=>d.iso===iso);
+  if(idx>=0)ud[idx]=day;else ud.push(day);
+  saveUserDaysFor(ctxId,cur,ud);
+  if(ctxId===activeContextId&&cur===CUR){userDays=ud;renderAll();}
+}
+function registerLoan(fromCtx,toCtx,cur,amount,note,iso){
+  const id='ln_'+loans.length+'_'+Math.random().toString(36).slice(2,8);
+  const noteTxt=note?(' — '+note):'';
+  applyLoanMovement(fromCtx.id,cur,iso,-Math.abs(amount),'Préstamo a '+ctxLabel(toCtx)+noteTxt,'PRESTAMO#'+id);
+  applyLoanMovement(toCtx.id,cur,iso,Math.abs(amount),'Préstamo de '+ctxLabel(fromCtx)+noteTxt,'PRESTAMO#'+id);
+  loans.push({id,iso,from:{id:fromCtx.id,empresa:fromCtx.empresa,proyecto:fromCtx.proyecto},to:{id:toCtx.id,empresa:toCtx.empresa,proyecto:toCtx.proyecto},cur,amount:Math.abs(amount),note:note||''});
+  saveLoans();
+}
+function deleteLoan(id){
+  if(!confirm('¿Eliminar este registro de préstamo del historial?\n\nOjo: esto NO revierte los movimientos de ingreso/egreso ya generados en las cajas — si te equivocaste, lo mejor es cargar un préstamo inverso para compensar.'))return;
+  loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();
+}
+function renderLoanSelects(){
+  const opts=contexts.map(c=>`<option value="${c.id}">${esc(ctxLabel(c))}</option>`).join('');
+  document.getElementById('loanFrom').innerHTML=opts;
+  document.getElementById('loanTo').innerHTML=opts;
+  document.getElementById('loanFrom').value=activeContextId;
+  const other=contexts.find(c=>c.id!==activeContextId);
+  if(other)document.getElementById('loanTo').value=other.id;
+  document.getElementById('loanCur').value=CUR;
+  if(!document.getElementById('loanDate').value)document.getElementById('loanDate').value=todayIso();
+}
+function renderLoanBalances(){
+  const pairs={};
+  loans.forEach(l=>{
+    const ids=[l.from.id,l.to.id].sort();
+    const key=ids[0]+'|'+ids[1]+'|'+l.cur;
+    pairs[key]=pairs[key]||{aId:ids[0],bId:ids[1],cur:l.cur,net:0,labels:{}};
+    const p=pairs[key];
+    p.labels[l.from.id]=ctxLabel(l.from);p.labels[l.to.id]=ctxLabel(l.to);
+    p.net+=(l.from.id===p.aId?1:-1)*l.amount;
+  });
+  const rows=Object.values(pairs).filter(p=>Math.abs(p.net)>0.005);
+  const el=document.getElementById('loanBalances');
+  if(!rows.length){el.innerHTML='<div class="empty-state"><div class="big">✓</div>No hay préstamos pendientes entre empresas/proyectos</div>';return}
+  el.innerHTML='<div class="bars">'+rows.map(p=>{
+    const owesId=p.net>0?p.bId:p.aId,owedId=p.net>0?p.aId:p.bId;
+    const owesLabel=p.labels[owesId]||owesId,owedLabel=p.labels[owedId]||owedId;
+    return `<div class="bar-row" style="grid-template-columns:1fr auto"><div class="nm">${esc(owesLabel)} debe a ${esc(owedLabel)}</div><div class="val neg">${CUR_SYM[p.cur]} ${fmtAR.format(Math.round(Math.abs(p.net)))}</div></div>`;
+  }).join('')+'</div>';
+}
+function renderLoanTable(){
+  const rows=loans.slice().sort((a,b)=>a.iso<b.iso?1:-1).map(l=>`<tr style="cursor:default">
+    <td class="l">${l.iso.split('-').reverse().join('/')}</td>
+    <td class="l">${esc(ctxLabel(l.from))}</td>
+    <td class="l">${esc(ctxLabel(l.to))}</td>
+    <td>${CUR_SYM[l.cur]} ${fmtAR.format(Math.round(l.amount))}</td>
+    <td class="l" style="color:var(--ink3)">${esc(l.note)||'—'}</td>
+    <td><button class="rmrow" style="height:30px" title="Eliminar registro (no revierte los movimientos ya generados)" onclick="deleteLoan('${l.id}')">✕</button></td>
+  </tr>`).join('');
+  document.getElementById('loanTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th class="l">Origen</th><th class="l">Destino</th><th>Importe</th><th class="l">Nota</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=6 class=l style="text-align:center;color:var(--ink3);padding:24px">Todavía no registraste préstamos</td></tr>'}</tbody>`;
+}
+function renderLoans(){renderLoanSelects();renderLoanBalances();renderLoanTable()}
+document.getElementById('loanSubmit').onclick=()=>{
+  const errEl=document.getElementById('loanErr');errEl.textContent='';
+  const fromId=document.getElementById('loanFrom').value,toId=document.getElementById('loanTo').value;
+  const cur=document.getElementById('loanCur').value;
+  const amt=num(document.getElementById('loanAmt').value);
+  const note=document.getElementById('loanNote').value.trim();
+  const iso=document.getElementById('loanDate').value;
+  if(fromId===toId){errEl.textContent='Elegí dos empresas/proyectos distintos.';return}
+  if(amt==null||amt<=0){errEl.textContent='Ingresá un importe válido.';return}
+  if(!iso){errEl.textContent='Elegí una fecha.';return}
+  const fromCtx=contexts.find(c=>c.id===fromId),toCtx=contexts.find(c=>c.id===toId);
+  registerLoan(fromCtx,toCtx,cur,amt,note,iso);
+  document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
+  renderLoans();
+  toast('Préstamo registrado: '+ctxLabel(fromCtx)+' → '+ctxLabel(toCtx));
+};
+
 /* ============ DAY EDITOR ============ */
 let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
@@ -910,11 +1100,74 @@ document.getElementById('backupBtn').onclick=()=>{
 };
 document.getElementById('importFile').onchange=e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
-  r.onload=()=>{try{const arr=JSON.parse(r.result);if(!Array.isArray(arr))throw 0;
-    const map={};userDays.forEach(d=>map[d.iso]=d);arr.forEach(d=>{if(d&&d.iso&&d.src==='user')map[d.iso]=d});
-    userDays=Object.values(map);saveUser();renderAll();toast(arr.length+' día(s) importado(s)');
+  r.onload=()=>{try{
+    const parsed=JSON.parse(r.result);
+    if(parsed&&Array.isArray(parsed.contexts)&&parsed.data&&typeof parsed.data==='object'){
+      // respaldo completo (todas las empresas/proyectos/cajas)
+      let days=0;
+      Object.keys(parsed.data).forEach(ctxId=>{
+        const bucket=parsed.data[ctxId]||{};
+        ['ARS','USD'].forEach(cur=>{
+          const arr=Array.isArray(bucket[cur])?bucket[cur]:[];
+          if(!arr.length)return;
+          const map={};loadUserDaysFor(ctxId,cur).forEach(d=>map[d.iso]=d);
+          arr.forEach(d=>{if(d&&d.iso&&d.src==='user'){map[d.iso]=d;days++}});
+          saveUserDaysFor(ctxId,cur,Object.values(map));
+        });
+      });
+      parsed.contexts.forEach(c=>{if(c&&c.id&&!contexts.some(x=>x.id===c.id))contexts.push({id:c.id,empresa:c.empresa,proyecto:c.proyecto})});
+      saveContexts();
+      if(Array.isArray(parsed.loans)){
+        const ids=new Set(loans.map(l=>l.id));
+        parsed.loans.forEach(l=>{if(l&&l.id&&!ids.has(l.id))loans.push(l)});
+        saveLoans();
+      }
+      userDays=loadUser();renderCtxSelectors();renderAll();
+      toast('Respaldo completo importado: '+days+' día(s) en '+parsed.contexts.length+' empresa(s)/proyecto(s)');
+    }else if(Array.isArray(parsed)){
+      const map={};userDays.forEach(d=>map[d.iso]=d);parsed.forEach(d=>{if(d&&d.iso&&d.src==='user')map[d.iso]=d});
+      userDays=Object.values(map);saveUser();renderAll();toast(parsed.length+' día(s) importado(s)');
+    }else throw 0;
   }catch(err){alert('El archivo no es un respaldo válido.')}e.target.value=''};
   r.readAsText(f);
+};
+
+/* ============ backup diario automático por email ============ */
+const BACKUP_EMAIL_KEY='caja_backup_email_v1',BACKUP_ENABLED_KEY='caja_backup_enabled_v1',BACKUP_LAST_KEY='caja_backup_last_v1';
+function fullBackupPayload(){
+  const data={};
+  contexts.forEach(c=>{data[c.id]={ARS:loadUserDaysFor(c.id,'ARS'),USD:loadUserDaysFor(c.id,'USD')}});
+  return {exportedAt:todayIso(),contexts,data,loans};
+}
+function maybeAutoBackup(){
+  const email=(localStorage.getItem(BACKUP_EMAIL_KEY)||'').trim();
+  if(!email)return;
+  if(localStorage.getItem(BACKUP_ENABLED_KEY)==='0')return;
+  const today=todayIso();
+  if(localStorage.getItem(BACKUP_LAST_KEY)===today)return;
+  const hasData=contexts.some(c=>loadUserDaysFor(c.id,'ARS').length||loadUserDaysFor(c.id,'USD').length);
+  if(!hasData)return;
+  const fname='respaldo_completo_'+today+'.json';
+  dl(fname,JSON.stringify(fullBackupPayload(),null,1),'application/json');
+  try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
+  setTimeout(()=>{
+    const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
+    const body=encodeURIComponent('Respaldo automático del '+today+'.\n\nSe descargó recién el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos incluidos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
+    window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
+  },700);
+  setTimeout(()=>toast('Respaldo diario descargado ('+fname+'). Adjuntalo al borrador de email y envialo.'),1300);
+}
+document.getElementById('emailBackupBtn').onclick=()=>{
+  const email=localStorage.getItem(BACKUP_EMAIL_KEY)||'';
+  const enabled=localStorage.getItem(BACKUP_ENABLED_KEY)!=='0';
+  const status=email?('Email actual: '+email+'\nEstado: '+(enabled?'Activado':'Desactivado')):'Todavía no configuraste un email para el respaldo diario.';
+  if(confirm(`Backup diario por email\n\n${status}\n\nCada vez que abras la app, si ya pasó un día desde el último respaldo, se descarga un .json con todo (todas las empresas/proyectos/cajas) y se abre un borrador de email para que lo envíes con el archivo adjunto.\n\nAceptar = Configurar / cambiar email\nCancelar = ${enabled?'Desactivar':'Activar'} el recordatorio diario`)){
+    const v=(prompt('Email donde recibir el recordatorio de respaldo diario:',email)||'').trim();
+    if(v){try{localStorage.setItem(BACKUP_EMAIL_KEY,v);localStorage.setItem(BACKUP_ENABLED_KEY,'1')}catch(e){}toast('Email de respaldo configurado: '+v)}
+  }else{
+    try{localStorage.setItem(BACKUP_ENABLED_KEY,enabled?'0':'1')}catch(e){}
+    toast('Backup diario '+(enabled?'desactivado':'activado'));
+  }
 };
 
 /* ============ PWA install ============ */
@@ -939,6 +1192,7 @@ if('serviceWorker' in navigator){
 renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
+setTimeout(maybeAutoBackup,1500);
 </script>
 </body>
 </html>
