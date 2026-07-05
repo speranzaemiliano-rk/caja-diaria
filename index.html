@@ -910,7 +910,8 @@ function deleteLoan(id){
   loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();
 }
 function renderLoanSelects(){
-  const opts=contexts.map(c=>`<option value="${c.id}">${esc(ctxLabel(c))}</option>`).join('');
+  const empresas=[...new Set(contexts.map(c=>c.empresa))];
+  const opts=empresas.map(emp=>'<optgroup label="'+esc(emp)+'">'+contexts.filter(c=>c.empresa===emp).map(c=>`<option value="${c.id}">${esc(c.proyecto)}</option>`).join('')+'</optgroup>').join('');
   document.getElementById('loanFrom').innerHTML=opts;
   document.getElementById('loanTo').innerHTML=opts;
   document.getElementById('loanFrom').value=activeContextId;
