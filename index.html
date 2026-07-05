@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Caja Diario · Movimientos</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Caja Diaria">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -63,6 +71,10 @@ body{
 .nav-btn:hover{background:var(--panel);color:var(--ink)}
 .nav-btn.on{background:linear-gradient(90deg,rgba(212,166,74,.16),rgba(212,166,74,.02));color:var(--gold2);box-shadow:inset 2px 0 0 var(--gold)}
 .side-foot{margin-top:auto;font-size:11px;color:var(--ink3);padding:12px 8px;border-top:1px solid var(--line)}
+.ctxsel-wrap{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.ctxsel-wrap select{width:100%}
+#cajaSeg{width:100%;margin-bottom:16px}
+#cajaSeg button{flex:1}
 
 .main{min-width:0;display:flex;flex-direction:column}
 .topbar{
@@ -227,7 +239,7 @@ tbody tr:last-child td{border-bottom:none}
 .field .ro{color:var(--gold2)}
 .ed-sub{font-family:'Fraunces';font-size:15px;font-weight:600;margin:6px 0 12px;display:flex;align-items:center;gap:9px}
 .ed-sub .ln2{flex:1;height:1px;background:var(--line)}
-.mvhead,.mvrow{display:grid;grid-template-columns:110px 96px 1.3fr 1fr 120px 36px;gap:9px;align-items:center}
+.mvhead,.mvrow{display:grid;grid-template-columns:110px 1.3fr 1fr 120px 36px;gap:9px;align-items:center}
 .mvhead{font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink3);font-weight:600;padding:0 2px 7px;margin-top:4px}
 .mvrow{margin-bottom:9px}
 .mvrow input,.mvrow select{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;color:var(--ink);font-family:inherit;font-size:13px;outline:none;width:100%;transition:.15s}
@@ -239,7 +251,6 @@ tbody tr:last-child td{border-bottom:none}
 .tgl button.out.on{background:var(--red-bg);color:var(--red)}
 .rmrow{background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink3);cursor:pointer;height:38px;font-size:16px;transition:.15s}
 .rmrow:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
-.usdhint{font-size:11px;color:var(--ink3);font-family:'JetBrains Mono';padding-left:2px;grid-column:1/-1;margin:-4px 0 6px}
 .addrow{background:none;border:1px dashed var(--line2);color:var(--ink2);font-family:inherit;font-weight:600;font-size:13px;padding:10px;border-radius:10px;cursor:pointer;width:100%;transition:.15s;margin-top:4px}
 .addrow:hover{border-color:var(--gold);color:var(--gold2);background:rgba(212,166,74,.05)}
 .ed-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 4px;padding:16px;background:var(--bg);border:1px solid var(--line);border-radius:13px}
@@ -266,6 +277,16 @@ tbody tr:last-child td{border-bottom:none}
       <div class="mark">💵</div>
       <div><h1>Caja Diaria</h1><span>Control · Tesorería</span></div>
     </div>
+    <div class="nav-label">Empresa / Proyecto</div>
+    <div class="ctxsel-wrap">
+      <select class="sel" id="ctxEmpresaSel"></select>
+      <select class="sel" id="ctxProyectoSel"></select>
+    </div>
+    <div class="nav-label">Caja</div>
+    <div class="seg" id="cajaSeg">
+      <button data-c="ARS" class="on">$ Pesos</button>
+      <button data-c="USD">US$ Dólares</button>
+    </div>
     <div class="nav-label">Panel</div>
     <button class="nav-btn on" data-v="dash"><span class="ic">◆</span> Resumen</button>
     <button class="nav-btn" data-v="index"><span class="ic">▤</span> Movimientos diarios</button>
@@ -274,7 +295,7 @@ tbody tr:last-child td{border-bottom:none}
     <div class="side-foot">
       <div id="footRange">—</div>
       <div id="savedCount" style="margin-top:6px;color:var(--gold2);font-weight:600"></div>
-      <div style="margin-top:4px">Generado desde <span class="hl">Movimientos_Diarios_Act.xlsx</span></div>
+      <div id="ctxFootNote" style="margin-top:4px"></div>
     </div>
   </aside>
 
@@ -287,6 +308,7 @@ tbody tr:last-child td{border-bottom:none}
       </div>
       <div class="ticker" id="ticker"></div>
       <div class="actions">
+        <button class="btn-ghost" id="installBtn" style="display:none" title="Instalar la app en este dispositivo">⇩ Instalar app</button>
         <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo">⤓ Respaldo</button>
         <button class="btn-primary" id="newDayBtn">＋ Nuevo día</button>
       </div>
@@ -394,10 +416,9 @@ const DATA = [{"sheet": "12-12-24", "y": 2024, "m": 12, "d": 12, "date": "12/12/
 const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const WD=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 const fmtAR=new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
-const fmtAR2=new Intl.NumberFormat('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-const peso=n=>(n==null||isNaN(n))?'—':'$ '+fmtAR.format(Math.round(n));
-const pesoS=n=>(n==null||isNaN(n))?'—':(n<0?'-$ ':'$ ')+fmtAR.format(Math.abs(Math.round(n)));
-const usd=n=>(n==null||isNaN(n))?'—':'US$ '+fmtAR.format(Math.round(n));
+const CUR_SYM={ARS:'$',USD:'US$'};
+const peso=n=>(n==null||isNaN(n))?'—':CUR_SYM[CUR]+' '+fmtAR.format(Math.round(n));
+const pesoS=n=>(n==null||isNaN(n))?'—':(n<0?'-'+CUR_SYM[CUR]+' ':CUR_SYM[CUR]+' ')+fmtAR.format(Math.abs(Math.round(n)));
 const compact=n=>{const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(1).replace('.0','')+'B';if(a>=1e6)return(n/1e6).toFixed(1).replace('.0','')+'M';if(a>=1e3)return Math.round(n/1e3)+'k';return Math.round(n)};
 const esc=s=>(''+(s==null?'':s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tip=document.getElementById('tip');
@@ -406,24 +427,49 @@ function moveTip(e){let x=e.clientX+16,y=e.clientY+16;const w=tip.offsetWidth,h=
 function hideTip(){tip.style.opacity=0}
 function wdOf(iso){const[y,m,d]=iso.split('-').map(Number);const dow=new Date(y,m-1,d).getDay();return WD[dow===0?6:dow-1]}
 
-/* ============ persistence ============ */
-const LS_KEY='caja_user_days_v2';
+/* ============ contexts (empresa / proyecto) ============ */
+const CTX_KEY='caja_contexts_v1';
+const ACTIVE_CTX_KEY='caja_active_context_v1';
+const ACTIVE_CUR_KEY='caja_active_currency_v1';
+const DEFAULT_CTX={id:'default',empresa:'Mi Empresa',proyecto:'Principal'};
+function loadContexts(){try{const r=localStorage.getItem(CTX_KEY);const list=r?JSON.parse(r):null;if(Array.isArray(list)&&list.length)return list}catch(e){}return [DEFAULT_CTX]}
+function saveContexts(){try{localStorage.setItem(CTX_KEY,JSON.stringify(contexts))}catch(e){}}
+let contexts=loadContexts();
+function loadActiveContextId(){try{const r=localStorage.getItem(ACTIVE_CTX_KEY);if(r&&contexts.some(c=>c.id===r))return r}catch(e){}return contexts[0].id}
+let activeContextId=loadActiveContextId();
+function activeContext(){return contexts.find(c=>c.id===activeContextId)||contexts[0]}
+function loadActiveCur(){try{const r=localStorage.getItem(ACTIVE_CUR_KEY);if(r==='ARS'||r==='USD')return r}catch(e){}return 'ARS'}
+let CUR=loadActiveCur();
+function slug(s){return (''+s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')||'x'}
+function newContextId(empresa,proyecto){let base=slug(empresa)+'__'+slug(proyecto),id=base,n=2;while(contexts.some(c=>c.id===id)){id=base+'-'+n;n++}return id}
+
+/* ============ persistence (per empresa/proyecto + caja) ============ */
+(function migrateOldUserDays(){
+  try{
+    const OLD_KEY='caja_user_days_v2',NEW_KEY='caja_user_days_v2::default::ARS';
+    const old=localStorage.getItem(OLD_KEY);
+    if(old&&!localStorage.getItem(NEW_KEY))localStorage.setItem(NEW_KEY,old);
+    if(old)localStorage.removeItem(OLD_KEY);
+  }catch(e){}
+})();
 let storageOK=true;
-function loadUser(){try{const r=localStorage.getItem(LS_KEY);return r?JSON.parse(r):[]}catch(e){storageOK=false;return []}}
-function saveUser(){try{localStorage.setItem(LS_KEY,JSON.stringify(userDays))}catch(e){storageOK=false}}
+function userDaysKey(){return 'caja_user_days_v2::'+activeContextId+'::'+CUR}
+function loadUser(){try{const r=localStorage.getItem(userDaysKey());return r?JSON.parse(r):[]}catch(e){storageOK=false;return []}}
+function saveUser(){try{localStorage.setItem(userDaysKey(),JSON.stringify(userDays))}catch(e){storageOK=false}}
 let userDays=loadUser();
 
 /* ============ state + derived ============ */
-const BASE=DATA.map(d=>({...d,src:'base'}));
+const BASE_SEED=DATA.map(d=>({...d,src:'base'})); // histórico importado: solo caja ARS del contexto por defecto
+function baseFor(){return (activeContextId==='default'&&CUR==='ARS')?BASE_SEED:[]}
 let days,real,last,first,totIng,totEgr,totMov,warnDays,monthsArr,years;
 function isWarn(d){return !d.empty&&d.dif!=null&&Math.abs(d.dif)>1000&&Math.abs(d.dif)<Math.abs(d.sf||0)*0.5}
 function recompute(){
   const map={};
-  BASE.forEach(d=>map[d.iso]=d);
+  baseFor().forEach(d=>map[d.iso]=d);
   userDays.forEach(d=>map[d.iso]=d); // user day overrides base (incl. empty placeholders)
   days=Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
   real=days.filter(d=>!d.empty);
-  first=real[0];last=real[real.length-1];
+  first=real[0]||null;last=real[real.length-1]||null;
   totIng=real.reduce((s,d)=>s+(d.ing||0),0);
   totEgr=real.reduce((s,d)=>s+(d.egr||0),0);
   totMov=real.reduce((s,d)=>s+d.nmov,0);
@@ -433,6 +479,63 @@ function recompute(){
   monthsArr=Object.keys(mm).sort().map(k=>{const o=mm[k];o.sf=o.days[o.days.length-1].sf;o.label=MESES[o.m-1]+' '+o.y;o.key=k;return o});
   years=[...new Set(real.map(d=>d.y))].sort();
 }
+
+/* ============ context / caja switching UI ============ */
+function renderCtxSelectors(){
+  const cur=activeContext();
+  const empresas=[...new Set(contexts.map(c=>c.empresa))];
+  const eSel=document.getElementById('ctxEmpresaSel');
+  eSel.innerHTML=empresas.map(e=>`<option value="${esc(e)}" ${e===cur.empresa?'selected':''}>${esc(e)}</option>`).join('')+'<option value="__new__">＋ Nueva empresa…</option>';
+  const pSel=document.getElementById('ctxProyectoSel');
+  const proyectos=contexts.filter(c=>c.empresa===cur.empresa);
+  pSel.innerHTML=proyectos.map(c=>`<option value="${c.id}" ${c.id===cur.id?'selected':''}>${esc(c.proyecto)}</option>`).join('')+'<option value="__new__">＋ Nuevo proyecto…</option>';
+}
+function switchContext(id){
+  activeContextId=id;
+  try{localStorage.setItem(ACTIVE_CTX_KEY,id)}catch(e){}
+  userDays=loadUser();
+  closeModal();closeEditor();
+  renderCtxSelectors();renderAll();
+  toast('Contexto: '+activeContext().empresa+' · '+activeContext().proyecto);
+}
+document.getElementById('ctxEmpresaSel').onchange=e=>{
+  const v=e.target.value;
+  if(v==='__new__'){
+    const name=(prompt('Nombre de la nueva empresa:')||'').trim();
+    if(!name){renderCtxSelectors();return}
+    const proj=(prompt('Nombre del primer proyecto para "'+name+'":','Principal')||'').trim();
+    if(!proj){renderCtxSelectors();return}
+    const id=newContextId(name,proj);
+    contexts.push({id,empresa:name,proyecto:proj});saveContexts();
+    switchContext(id);return;
+  }
+  const target=contexts.find(c=>c.empresa===v);
+  if(target)switchContext(target.id);else renderCtxSelectors();
+};
+document.getElementById('ctxProyectoSel').onchange=e=>{
+  const v=e.target.value;
+  if(v==='__new__'){
+    const cur=activeContext();
+    const proj=(prompt('Nombre del nuevo proyecto para "'+cur.empresa+'":')||'').trim();
+    if(!proj){renderCtxSelectors();return}
+    const id=newContextId(cur.empresa,proj);
+    contexts.push({id,empresa:cur.empresa,proyecto:proj});saveContexts();
+    switchContext(id);return;
+  }
+  switchContext(v);
+};
+document.querySelectorAll('#cajaSeg button').forEach(b=>{
+  if(b.dataset.c===CUR)b.classList.add('on');else b.classList.remove('on');
+  b.onclick=()=>{
+    if(b.classList.contains('on'))return;
+    document.querySelectorAll('#cajaSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    CUR=b.dataset.c;
+    try{localStorage.setItem(ACTIVE_CUR_KEY,CUR)}catch(e){}
+    userDays=loadUser();
+    closeModal();closeEditor();
+    renderAll();
+  };
+});
 
 /* ============ navigation ============ */
 const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales']};
@@ -452,12 +555,13 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
 let currentRange=0;
 function renderAll(){
   recompute();
-  document.getElementById('footRange').textContent=first.date+' — '+last.date;
+  document.getElementById('footRange').textContent=first?(first.date+' — '+last.date):'Todavía no hay movimientos en esta caja';
   const sc=document.getElementById('savedCount');
   if(sc)sc.textContent=userDays.length?('💾 '+userDays.length+' día(s) guardado(s) por vos'+(storageOK?'':' (no persiste aquí)')):'';
+  document.getElementById('ctxFootNote').innerHTML=(activeContextId==='default'&&CUR==='ARS')?'Generado desde <span class="hl">Movimientos_Diarios_Act.xlsx</span>':'';
   document.getElementById('ticker').innerHTML=`
-    <div class="tk"><b>Saldo actual</b><span class="v go mono">${peso(last.sf)}</span></div>
-    <div class="tk"><b>Dólar Blue (TC)</b><span class="v mono">$ ${fmtAR2.format(last.tc||0)}</span></div>
+    <div class="tk"><b>Saldo actual</b><span class="v go mono">${last?peso(last.sf):peso(0)}</span></div>
+    <div class="tk"><b>Caja activa</b><span class="v mono">${CUR==='ARS'?'$ Pesos':'US$ Dólares'}</span></div>
     <div class="tk"><b>Días registrados</b><span class="v mono">${real.length}</span></div>`;
   renderKpis();renderDonut();renderDiffList();renderMonthBars();drawLine(currentRange);
   fillYearSelects();renderIndex();
@@ -466,7 +570,7 @@ function renderAll(){
 function renderKpis(){
   const neto=totIng+totEgr;
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi acc"><div class="lab">◆ Saldo de caja</div><div class="num mono">${peso(last.sf)}</div><div class="meta">al ${last.date} · ${last.wd}</div></div>
+    <div class="kpi acc"><div class="lab">◆ Saldo de caja</div><div class="num mono">${last?peso(last.sf):peso(0)}</div><div class="meta">${last?('al '+last.date+' · '+last.wd):'sin movimientos aún'}</div></div>
     <div class="kpi"><div class="lab pos">▲ Ingresos totales</div><div class="num mono pos">${peso(totIng)}</div><div class="meta">${real.length} días operados</div></div>
     <div class="kpi"><div class="lab neg">▼ Egresos totales</div><div class="num mono neg">${pesoS(totEgr)}</div><div class="meta">salidas acumuladas</div></div>
     <div class="kpi"><div class="lab">≈ Flujo neto</div><div class="num mono ${neto>=0?'pos':'neg'}">${pesoS(neto)}</div><div class="meta">ingresos − egresos</div></div>
@@ -481,8 +585,8 @@ document.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=()=>{
 });
 function drawLine(rangeDays){
   let pts=real.filter(d=>d.sf!=null);
-  if(rangeDays>0){const cut=new Date(last.iso);cut.setDate(cut.getDate()-rangeDays);pts=pts.filter(d=>new Date(d.iso)>=cut)}
-  if(pts.length<1){document.getElementById('lineChart').innerHTML='<div class="empty-state">Sin datos</div>';return}
+  if(rangeDays>0&&last){const cut=new Date(last.iso);cut.setDate(cut.getDate()-rangeDays);pts=pts.filter(d=>new Date(d.iso)>=cut)}
+  if(pts.length<1){document.getElementById('lineChart').innerHTML='<div class="empty-state"><div class="big">◔</div>Todavía no hay movimientos en esta caja</div>';return}
   const W=720,H=300,P={l:64,r:16,t:18,b:34};const iw=W-P.l-P.r,ih=H-P.t-P.b;
   const vals=pts.map(d=>d.sf);let mn=Math.min(...vals),mx=Math.max(...vals);const pad=(mx-mn)*0.12||1;mn-=pad;mx+=pad;mn=Math.min(mn,0);
   const x=i=>P.l+(pts.length<2?iw/2:i/(pts.length-1)*iw);
@@ -595,7 +699,7 @@ function toggleM(h){h.classList.toggle('open');const open=h.classList.contains('
 function openDayIso(iso){const d=days.find(x=>x.iso===iso);if(d)openDay(d)}
 function openDay(d){
   const neto=(d.ing||0)+(d.egr||0);
-  const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(m.ref)||'—'}</td><td>${m.usd!=null?usd(m.usd):'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="4" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
+  const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(m.ref)||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
   const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>'<span>'+peso(c)+'</span>').join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${peso(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
   document.getElementById('modal').innerHTML=`
@@ -609,21 +713,16 @@ function openDay(d){
         <div class="dk"><b>Egresos</b><div class="dv neg">${pesoS(d.egr)}</div></div>
         <div class="dk"><b>Saldo final</b><div class="dv" style="color:var(--gold2)">${peso(d.sf)}</div></div></div>
       <div class="mvs"><table>
-        <thead><tr><th>Importe</th><th class="l">Concepto / Descripción</th><th class="l">Referencia</th><th>Equiv. USD</th></tr></thead>
+        <thead><tr><th>Importe</th><th class="l">Concepto / Descripción</th><th class="l">Referencia</th></tr></thead>
         <tbody>${movRows}</tbody>
-        ${d.movs.length?`<tfoot><tr style="cursor:default"><td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>`:''}
+        ${d.movs.length?`<tfoot><tr style="cursor:default"><td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>`:''}
       </table></div>
-      <div class="ctrl">
+      <div class="ctrl" style="grid-template-columns:1fr">
         <div class="ctrlbox"><h4>✓ Control de caja</h4>
           <div class="crow"><span>Saldo según movimientos</span><span>${peso(d.sf)}</span></div>
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
-        <div class="ctrlbox"><h4>💵 Referencia cambiaria</h4>
-          <div class="crow"><span>Dólar Blue (TC vendedor)</span><span>$ ${d.tc!=null?fmtAR2.format(d.tc):'—'}</span></div>
-          <div class="crow"><span>Saldo en USD aprox.</span><span>${d.tc?usd(d.sf/d.tc):'—'}</span></div>
-          <div class="crow"><span>Ingresos en USD</span><span style="color:var(--green)">${d.tc?usd(d.ing/d.tc):'—'}</span></div>
-          <div class="crow"><span>Egresos en USD</span><span style="color:var(--red)">${d.tc?usd(d.egr/d.tc):'—'}</span></div></div>
       </div>${caja}
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
@@ -635,11 +734,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeE
 /* ============ ANALYTICS ============ */
 function renderAnalytics(){
   const avgDay=totMov/(real.length||1);
-  const bigDay=real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0];
+  const bigDay=real.length?real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0]:null;
   document.getElementById('anaKpis').innerHTML=`
     <div class="kpi"><div class="lab">Promedio mov./día</div><div class="num mono">${avgDay.toFixed(1)}</div><div class="meta">sobre ${real.length} días</div></div>
-    <div class="kpi"><div class="lab">Meses operados</div><div class="num mono">${monthsArr.length}</div><div class="meta">${first.date.slice(3)} → ${last.date.slice(3)}</div></div>
-    <div class="kpi acc"><div class="lab">Mejor flujo neto diario</div><div class="num mono pos">${pesoS((bigDay.ing||0)+(bigDay.egr||0))}</div><div class="meta">${bigDay.date}</div></div>
+    <div class="kpi"><div class="lab">Meses operados</div><div class="num mono">${monthsArr.length}</div><div class="meta">${first?(first.date.slice(3)+' → '+last.date.slice(3)):'—'}</div></div>
+    <div class="kpi acc"><div class="lab">Mejor flujo neto diario</div><div class="num mono pos">${bigDay?pesoS((bigDay.ing||0)+(bigDay.egr||0)):'—'}</div><div class="meta">${bigDay?bigDay.date:'—'}</div></div>
     <div class="kpi"><div class="lab">Ticket promedio mov.</div><div class="num mono">${peso((totIng-totEgr)/(totMov||1))}</div><div class="meta">importe absoluto medio</div></div>`;
   const cm={};
   real.forEach(d=>d.movs.forEach(m=>{const c=(m.cpt||'(sin concepto)').trim()||'(sin concepto)';(cm[c]=cm[c]||{n:0,abs:0,net:0}).n++;cm[c].abs+=Math.abs(m.imp);cm[c].net+=m.imp}));
@@ -668,53 +767,53 @@ function renderMovs(){
   rows.sort((a,b)=>a.d.iso<b.d.iso?1:-1);
   const tot=rows.reduce((s,r)=>s+r.m.imp,0);
   document.getElementById('movCount').innerHTML=`<span class="hl">${rows.length}</span> movimiento(s) · suma neta: <span class="${tot>=0?'pos':'neg'}" style="font-family:JetBrains Mono">${pesoS(tot)}</span>`;
-  const body=rows.slice(0,600).map(r=>`<tr onclick='openDayIso("${r.d.iso}")'><td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td><td>${r.m.usd!=null?usd(r.m.usd):'—'}</td></tr>`).join('');
-  document.getElementById('movTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th><th>USD</th></tr></thead><tbody>${body||'<tr><td colspan=5 class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>'}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=5 class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
+  const body=rows.slice(0,600).map(r=>`<tr onclick='openDayIso("${r.d.iso}")'><td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td></tr>`).join('');
+  document.getElementById('movTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead><tbody>${body||'<tr><td colspan=4 class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>'}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=4 class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
 }
 ['movSearch','movType','movYear'].forEach(id=>document.getElementById(id).addEventListener('input',renderMovs));
 
 /* ============ CSV ============ */
 function dl(name,content,type){const b=new Blob([content],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
 document.getElementById('expIdx').onclick=()=>{let c='Fecha;Dia;Saldo Inicial;Ingresos;Egresos;Saldo Final;Movimientos;Diferencia\n';real.forEach(d=>c+=`${d.date};${d.wd};${d.si||0};${d.ing||0};${d.egr||0};${d.sf||0};${d.nmov};${d.dif||0}\n`);dl('resumen_diario.csv','\ufeff'+c,'text/csv;charset=utf-8')};
-document.getElementById('expMov').onclick=()=>{let c='Fecha;Importe;Concepto;Referencia;USD\n';real.forEach(d=>d.movs.forEach(m=>c+=`${d.date};${m.imp};${(m.cpt||'').replace(/;/g,',')};${(m.ref||'').replace(/;/g,',')};${m.usd||''}\n`));dl('movimientos_detalle.csv','\ufeff'+c,'text/csv;charset=utf-8')};
+document.getElementById('expMov').onclick=()=>{let c='Fecha;Importe;Concepto;Referencia\n';real.forEach(d=>d.movs.forEach(m=>c+=`${d.date};${m.imp};${(m.cpt||'').replace(/;/g,',')};${(m.ref||'').replace(/;/g,',')}\n`));dl('movimientos_detalle.csv','\ufeff'+c,'text/csv;charset=utf-8')};
 
 /* ============ DAY EDITOR ============ */
 let editIso=null,edState=null;
-function nextDate(){const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
-function blankMov(){return{cur:'ARS',type:'in',amt:'',cpt:'',ref:''}}
+function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
+function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
-  let m={iso:nextDate(),si:last.sf,tc:last.tc||1426.5,fis:'',chq:'',movs:[blankMov()]};
+  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',movs:[blankMov()]};
   if(existing){
-    m={iso:existing.iso,si:existing.si,tc:existing.tc,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
-       movs:existing.movs.map(mv=>({cur:'ARS',type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
+    m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
+       movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
   }
   edState=m;
+  const symLabel=CUR_SYM[CUR];
   document.getElementById('editor').innerHTML=`
     <div class="ed-head"><div class="ei">${existing?'✎':'＋'}</div>
-      <div><h3>${existing?'Editar día':'Nuevo día'}</h3><div class="es">Cargá los movimientos del día — el saldo final se calcula solo. Si no hubo movimientos, guardalo igual y arrastra el saldo.</div></div>
+      <div><h3>${existing?'Editar día':'Nuevo día'} <span class="flag ${CUR==='ARS'?'ok':'user'}" style="vertical-align:middle">Caja ${symLabel}</span></h3><div class="es">Cargá los movimientos del día — el saldo final se calcula solo. Si no hubo movimientos, guardalo igual y arrastra el saldo.</div></div>
       <button class="mclose" style="margin-left:auto" onclick="closeEditor()">✕</button></div>
     <div class="ed-body">
-      <div class="fgrid">
+      <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr">
         <div class="field"><label>Fecha</label><input type="date" id="f_date" value="${m.iso}" ${existing?'disabled':''}></div>
-        <div class="field"><label>Saldo inicial ($)</label><input class="amt" id="f_si" value="${m.si}"></div>
-        <div class="field"><label>Dólar Blue (TC)</label><input class="amt" id="f_tc" value="${m.tc}"></div>
+        <div class="field"><label>Saldo inicial (${symLabel})</label><input class="amt" id="f_si" value="${m.si}"></div>
         <div class="field"><label>Día</label><input id="f_wd" value="${wdOf(m.iso)}" disabled class="ro"></div>
       </div>
       <div class="ed-sub">Movimientos <div class="ln2"></div></div>
-      <div class="mvhead"><div>Tipo</div><div>Moneda</div><div>Concepto / Descripción</div><div>Referencia</div><div style="text-align:right">Importe</div><div></div></div>
+      <div class="mvhead"><div>Tipo</div><div>Concepto / Descripción</div><div>Referencia</div><div style="text-align:right">Importe</div><div></div></div>
       <div id="mvList"></div>
       <button class="addrow" id="addRow">＋ Agregar movimiento (opcional)</button>
       <div class="ed-summary">
-        <div><b>Ingresos</b><span class="pos" id="s_in">$ 0</span></div>
-        <div><b>Egresos</b><span class="neg" id="s_out">$ 0</span></div>
-        <div><b>Flujo neto</b><span id="s_net">$ 0</span></div>
-        <div><b>Saldo final</b><span style="color:var(--gold2)" id="s_sf">$ 0</span></div>
+        <div><b>Ingresos</b><span class="pos" id="s_in">${symLabel} 0</span></div>
+        <div><b>Egresos</b><span class="neg" id="s_out">${symLabel} 0</span></div>
+        <div><b>Flujo neto</b><span id="s_net">${symLabel} 0</span></div>
+        <div><b>Saldo final</b><span style="color:var(--gold2)" id="s_sf">${symLabel} 0</span></div>
       </div>
       <div class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:16px">
-        <div class="field"><label>Caja real / conteo físico ($) — opcional</label><input class="amt" id="f_fis" value="${m.fis}" placeholder="dejar vacío si no aplica"></div>
-        <div class="field"><label>Cheques / valores ($) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
+        <div class="field"><label>Caja real / conteo físico (${symLabel}) — opcional</label><input class="amt" id="f_fis" value="${m.fis}" placeholder="dejar vacío si no aplica"></div>
+        <div class="field"><label>Cheques / valores (${symLabel}) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
       </div>
       <div id="edErr" class="errline" style="margin-top:10px"></div>
     </div>
@@ -725,7 +824,7 @@ function openEditor(existing){
     </div>`;
   renderMovRows();recalcEditor();
   document.getElementById('f_date').addEventListener('input',e=>{edState.iso=e.target.value;document.getElementById('f_wd').value=wdOf(e.target.value)});
-  ['f_si','f_tc'].forEach(id=>document.getElementById(id).addEventListener('input',recalcEditor));
+  document.getElementById('f_si').addEventListener('input',recalcEditor);
   document.getElementById('addRow').onclick=()=>{edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   document.getElementById('saveDay').onclick=saveDay;
   document.getElementById('edOverlay').classList.add('on');document.body.style.overflow='hidden';
@@ -735,17 +834,14 @@ function renderMovRows(){
   list.innerHTML=edState.movs.map((mv,i)=>`
     <div class="mvrow" data-i="${i}">
       <div class="tgl"><button class="in ${mv.type==='in'?'on':''}" data-t="in">＋</button><button class="out ${mv.type==='out'?'on':''}" data-t="out">−</button></div>
-      <select class="cur"><option value="ARS" ${mv.cur==='ARS'?'selected':''}>ARS $</option><option value="USD" ${mv.cur==='USD'?'selected':''}>USD</option></select>
       <input class="cpt" placeholder="Ej: Cambio, Salvador, ABL…" value="${esc(mv.cpt)}">
       <input class="ref" placeholder="opcional" value="${esc(mv.ref)}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${mv.amt}">
       <button class="rmrow" title="Quitar">✕</button>
-    </div>
-    <div class="usdhint" data-h="${i}"></div>`).join('');
+    </div>`).join('');
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.movs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcEditor()});
-    row.querySelector('.cur').onchange=e=>{edState.movs[i].cur=e.target.value;recalcEditor()};
     row.querySelector('.cpt').oninput=e=>edState.movs[i].cpt=e.target.value;
     row.querySelector('.ref').oninput=e=>edState.movs[i].ref=e.target.value;
     row.querySelector('.amount').oninput=e=>{edState.movs[i].amt=e.target.value;recalcEditor()};
@@ -755,29 +851,23 @@ function renderMovRows(){
 function num(v){if(v===''||v==null)return null;const n=parseFloat((''+v).replace(/[^\d.\-]/g,''));return isNaN(n)?null:n}
 function computeEditor(){
   const si=num(document.getElementById('f_si').value)||0;
-  const tc=num(document.getElementById('f_tc').value)||0;
   let ing=0,egr=0;const movs=[];
   edState.movs.forEach(mv=>{
     const a=num(mv.amt);if(a==null||a===0)return;
-    const sign=mv.type==='out'?-1:1;let impARS,usdv;
-    if(mv.cur==='USD'){usdv=sign*a;impARS=tc?usdv*tc:0;}
-    else{impARS=sign*a;usdv=tc?impARS/tc:null;}
-    impARS=Math.round(impARS*100)/100;
-    if(impARS>=0)ing+=impARS;else egr+=impARS;
-    movs.push({imp:impARS,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim(),usd:usdv!=null?Math.round(usdv*100)/100:null});
+    const sign=mv.type==='out'?-1:1;
+    let imp=Math.round(sign*a*100)/100;
+    if(imp>=0)ing+=imp;else egr+=imp;
+    movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim()});
   });
   const sf=Math.round((si+ing+egr)*100)/100;
-  return {si,tc,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
+  return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
 }
 function recalcEditor(){
-  const c=computeEditor(),tc=c.tc;
+  const c=computeEditor();
   document.getElementById('s_in').textContent=peso(c.ing);
   document.getElementById('s_out').textContent=pesoS(c.egr);
   const net=c.ing+c.egr,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
   document.getElementById('s_sf').textContent=peso(c.sf);
-  edState.movs.forEach((mv,i)=>{const h=document.querySelector(`.usdhint[data-h="${i}"]`);if(!h)return;const a=num(mv.amt);if(a==null||a===0){h.textContent='';return}
-    if(mv.cur==='USD')h.innerHTML=`≈ ${peso((mv.type==='out'?-1:1)*a*tc)} en pesos`;
-    else h.innerHTML=tc?`≈ ${usd((mv.type==='out'?-1:1)*a/tc)}`:'';});
 }
 function saveDay(){
   const c=computeEditor(),iso=document.getElementById('f_date').value,err=document.getElementById('edErr');
@@ -789,8 +879,8 @@ function saveDay(){
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
   const rec={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
-    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,usd:c.tc?Math.round(c.sf):null,tc:c.tc,dif,fis,chq,empty:false,caja:[],
-    movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref,usd:m.usd}))};
+    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,empty:false,caja:[],
+    movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref}))};
   if(editIso){const idx=userDays.findIndex(d=>d.iso===editIso);if(idx>=0)userDays[idx]=rec;else userDays.push(rec)}
   else userDays.push(rec);
   saveUser();openMonths.add(y+'-'+String(mo).padStart(2,'0'));
@@ -812,10 +902,10 @@ function toast(msg){let t=document.getElementById('toast');if(!t){t=document.cre
 
 /* ============ backup ============ */
 document.getElementById('backupBtn').onclick=()=>{
-  const n=userDays.length;
-  if(confirm(`Respaldo de días agregados\n\nTenés ${n} día(s) cargado(s) manualmente.\n\nAceptar = Exportar respaldo (.json)\nCancelar = Importar un respaldo`)){
-    if(!n){alert('Todavía no agregaste días manualmente.');return}
-    dl('respaldo_caja_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(userDays,null,1),'application/json');
+  const n=userDays.length,ctx=activeContext();
+  if(confirm(`Respaldo de días agregados — ${ctx.empresa} · ${ctx.proyecto} · Caja ${CUR}\n\nTenés ${n} día(s) cargado(s) manualmente en esta caja.\n\nAceptar = Exportar respaldo (.json)\nCancelar = Importar un respaldo`)){
+    if(!n){alert('Todavía no agregaste días manualmente en esta caja.');return}
+    dl('respaldo_'+slug(ctx.empresa)+'-'+slug(ctx.proyecto)+'_'+CUR+'_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(userDays,null,1),'application/json');
   }else{document.getElementById('importFile').click()}
 };
 document.getElementById('importFile').onchange=e=>{
@@ -827,7 +917,26 @@ document.getElementById('importFile').onchange=e=>{
   r.readAsText(f);
 };
 
+/* ============ PWA install ============ */
+let deferredInstall=null;
+const installBtn=document.getElementById('installBtn');
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();deferredInstall=e;installBtn.style.display='inline-flex';
+});
+installBtn.onclick=async()=>{
+  if(!deferredInstall)return;
+  installBtn.style.display='none';
+  deferredInstall.prompt();
+  await deferredInstall.userChoice;
+  deferredInstall=null;
+};
+window.addEventListener('appinstalled',()=>{installBtn.style.display='none';deferredInstall=null;toast('Caja Diaria instalada')});
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})});
+}
+
 /* ============ init ============ */
+renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
 </script>
