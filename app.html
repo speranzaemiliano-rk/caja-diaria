@@ -248,6 +248,9 @@ tbody tr:last-child td{border-bottom:none}
 .mvrow input,.mvrow select{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;color:var(--ink);font-family:inherit;font-size:13px;outline:none;width:100%;transition:.15s}
 .mvrow input.amt{font-family:'JetBrains Mono';text-align:right}
 .mvrow input:focus,.mvrow select:focus{border-color:var(--gold)}
+.loanrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 12px;padding-left:2px}
+.loanrow label{font-size:12px;color:var(--ink3);display:flex;align-items:center;gap:6px;cursor:pointer}
+.loanrow select.loansel{width:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--ink);font-size:12px;font-family:inherit}
 .tgl{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .tgl button{flex:1;background:none;border:none;color:var(--ink3);font-family:inherit;font-size:12px;font-weight:700;padding:8px 0;cursor:pointer;transition:.12s}
 .tgl button.in.on{background:var(--green-bg);color:var(--green)}
@@ -435,7 +438,8 @@ tbody tr:last-child td{border-bottom:none}
           <div id="loanBalances"></div>
         </div>
         <div class="panel" style="margin-top:18px">
-          <div class="ph"><div><h3>Historial de préstamos</h3><p>Todos los movimientos registrados entre cajas</p></div></div>
+          <div class="ph"><div><h3 id="loanTableTitle">Historial de préstamos</h3><p id="loanTableSub">Todos los movimientos registrados entre cajas</p></div></div>
+          <div id="loanTableResetWrap"></div>
           <div style="overflow:auto"><table id="loanTable"></table></div>
         </div>
       </section>
@@ -870,6 +874,26 @@ function ctxLabel(c){return c.empresa+' / '+c.proyecto}
 function loadUserDaysFor(ctxId,cur){try{const r=localStorage.getItem('caja_user_days_v2::'+ctxId+'::'+cur);return r?JSON.parse(r):[]}catch(e){return []}}
 function saveUserDaysFor(ctxId,cur,arr){try{localStorage.setItem('caja_user_days_v2::'+ctxId+'::'+cur,JSON.stringify(arr))}catch(e){}}
 function baseForCtx(ctxId,cur){return (ctxId==='default'&&cur==='ARS')?BASE_SEED:[]}
+// Recorre los días REALES (no vacíos) en orden cronológico y, si el saldo inicial
+// de alguno quedó desalineado tras insertar/editar un día anterior, lo recalcula
+// en cascada junto con su saldo final y diferencia de caja.
+function cascadeChain(ctxId,cur,ud){
+  const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
+  const realSorted=Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  let prevSf=null;
+  realSorted.forEach(d=>{
+    if(prevSf!=null&&Math.round((d.si||0)*100)!==Math.round(prevSf*100)){
+      d.si=prevSf;
+      d.sf=Math.round((d.si+(d.ing||0)+(d.egr||0))*100)/100;
+      d.dif=d.fis!=null?Math.round((d.sf-d.fis)*100)/100:d.dif;
+      const idx=ud.findIndex(x=>x.iso===d.iso);
+      const rec={...d,src:'user'};
+      if(idx>=0)ud[idx]=rec;else ud.push(rec);
+    }
+    prevSf=d.sf;
+  });
+  return ud;
+}
 function applyLoanMovement(ctxId,cur,iso,imp,cpt,ref){
   const ud=loadUserDaysFor(ctxId,cur);
   const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
@@ -894,6 +918,7 @@ function applyLoanMovement(ctxId,cur,iso,imp,cpt,ref){
   day.dif=day.fis!=null?Math.round((day.sf-day.fis)*100)/100:null;
   const idx=ud.findIndex(d=>d.iso===iso);
   if(idx>=0)ud[idx]=day;else ud.push(day);
+  cascadeChain(ctxId,cur,ud);
   saveUserDaysFor(ctxId,cur,ud);
   if(ctxId===activeContextId&&cur===CUR){userDays=ud;renderAll();}
 }
@@ -920,6 +945,7 @@ function renderLoanSelects(){
   document.getElementById('loanCur').value=CUR;
   if(!document.getElementById('loanDate').value)document.getElementById('loanDate').value=todayIso();
 }
+let loanFilterPair=null;
 function renderLoanBalances(){
   const pairs={};
   loans.forEach(l=>{
@@ -936,19 +962,56 @@ function renderLoanBalances(){
   el.innerHTML='<div class="bars">'+rows.map(p=>{
     const owesId=p.net>0?p.bId:p.aId,owedId=p.net>0?p.aId:p.bId;
     const owesLabel=p.labels[owesId]||owesId,owedLabel=p.labels[owedId]||owedId;
-    return `<div class="bar-row" style="grid-template-columns:1fr auto"><div class="nm">${esc(owesLabel)} debe a ${esc(owedLabel)}</div><div class="val neg">${CUR_SYM[p.cur]} ${fmtAR.format(Math.round(Math.abs(p.net)))}</div></div>`;
-  }).join('')+'</div>';
+    const key=p.aId+'|'+p.bId+'|'+p.cur;
+    return `<div class="bar-row loanbal" data-key="${key}" style="grid-template-columns:1fr auto;cursor:pointer" title="Ver cuenta corriente detallada">
+      <div class="nm">${esc(owesLabel)} debe a ${esc(owedLabel)}</div>
+      <div class="val neg">${CUR_SYM[p.cur]} ${fmtAR.format(Math.round(Math.abs(p.net)))}</div></div>`;
+  }).join('')+'</div><p class="note">Tocá un par para ver el detalle de la cuenta corriente entre ambos.</p>';
+  el.querySelectorAll('.loanbal').forEach(row=>row.onclick=()=>{
+    const[aId,bId,cur]=row.dataset.key.split('|');
+    loanFilterPair={aId,bId,cur};
+    renderLoanTable();
+  });
 }
 function renderLoanTable(){
-  const rows=loans.slice().sort((a,b)=>a.iso<b.iso?1:-1).map(l=>`<tr style="cursor:default">
-    <td class="l">${l.iso.split('-').reverse().join('/')}</td>
-    <td class="l">${esc(ctxLabel(l.from))}</td>
-    <td class="l">${esc(ctxLabel(l.to))}</td>
-    <td>${CUR_SYM[l.cur]} ${fmtAR.format(Math.round(l.amount))}</td>
-    <td class="l" style="color:var(--ink3)">${esc(l.note)||'—'}</td>
-    <td><button class="rmrow" style="height:30px" title="Eliminar registro (no revierte los movimientos ya generados)" onclick="deleteLoan('${l.id}')">✕</button></td>
-  </tr>`).join('');
-  document.getElementById('loanTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th class="l">Origen</th><th class="l">Destino</th><th>Importe</th><th class="l">Nota</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=6 class=l style="text-align:center;color:var(--ink3);padding:24px">Todavía no registraste préstamos</td></tr>'}</tbody>`;
+  let list=loans.slice();
+  const titleEl=document.getElementById('loanTableTitle'),subEl=document.getElementById('loanTableSub'),resetWrap=document.getElementById('loanTableResetWrap');
+  let showRunning=false,aId,bId;
+  if(loanFilterPair){
+    ({aId,bId}=loanFilterPair);
+    const cur=loanFilterPair.cur;
+    list=list.filter(l=>l.cur===cur&&((l.from.id===aId&&l.to.id===bId)||(l.from.id===bId&&l.to.id===aId)));
+    const ctxA=contexts.find(c=>c.id===aId),ctxB=contexts.find(c=>c.id===bId);
+    titleEl.textContent='Cuenta corriente';
+    subEl.textContent='Detalle cronológico entre '+(ctxA?ctxLabel(ctxA):aId)+' y '+(ctxB?ctxLabel(ctxB):bId);
+    resetWrap.innerHTML='<button class="btn-ghost" id="loanFilterReset" style="margin-bottom:14px">← Ver todos los préstamos</button>';
+    document.getElementById('loanFilterReset').onclick=()=>{loanFilterPair=null;renderLoanTable()};
+    showRunning=true;
+  }else{
+    titleEl.textContent='Historial de préstamos';
+    subEl.textContent='Todos los movimientos registrados entre cajas';
+    resetWrap.innerHTML='';
+  }
+  list.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  let running=0;
+  const rows=list.map(l=>{
+    let runningCell='';
+    if(showRunning){
+      running+=(l.from.id===aId?1:-1)*l.amount;
+      runningCell=`<td style="color:var(--gold2);font-weight:600">${CUR_SYM[l.cur]} ${fmtAR.format(Math.round(Math.abs(running)))}</td>`;
+    }
+    return `<tr style="cursor:default">
+      <td class="l">${l.iso.split('-').reverse().join('/')}</td>
+      <td class="l">${esc(ctxLabel(l.from))}</td>
+      <td class="l">${esc(ctxLabel(l.to))}</td>
+      <td>${CUR_SYM[l.cur]} ${fmtAR.format(Math.round(l.amount))}</td>
+      ${runningCell}
+      <td class="l" style="color:var(--ink3)">${esc(l.note)||'—'}</td>
+      <td><button class="rmrow" style="height:30px" title="Eliminar registro (no revierte los movimientos ya generados)" onclick="deleteLoan('${l.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+  const emptyMsg=loanFilterPair?'Sin movimientos registrados entre este par':'Todavía no registraste préstamos';
+  document.getElementById('loanTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th class="l">Origen</th><th class="l">Destino</th><th>Importe</th>${showRunning?'<th>Saldo acumulado</th>':''}<th class="l">Nota</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan=${showRunning?7:6} class=l style="text-align:center;color:var(--ink3);padding:24px">${emptyMsg}</td></tr>`}</tbody>`;
 }
 function renderLoans(){renderLoanSelects();renderLoanBalances();renderLoanTable()}
 document.getElementById('loanSubmit').onclick=()=>{
@@ -971,7 +1034,7 @@ document.getElementById('loanSubmit').onclick=()=>{
 /* ============ DAY EDITOR ============ */
 let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
-function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
+function blankMov(){return{type:'in',amt:'',cpt:'',ref:'',loanTo:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
   let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',movs:[blankMov()]};
@@ -1022,6 +1085,8 @@ function openEditor(existing){
 }
 function renderMovRows(){
   const list=document.getElementById('mvList');
+  const canLoan=!editIso&&contexts.length>1;
+  const otherCtxs=contexts.filter(c=>c.id!==activeContextId);
   list.innerHTML=edState.movs.map((mv,i)=>`
     <div class="mvrow" data-i="${i}">
       <div class="tgl"><button class="in ${mv.type==='in'?'on':''}" data-t="in">＋</button><button class="out ${mv.type==='out'?'on':''}" data-t="out">−</button></div>
@@ -1029,7 +1094,14 @@ function renderMovRows(){
       <input class="ref" placeholder="opcional" value="${esc(mv.ref)}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${mv.amt}">
       <button class="rmrow" title="Quitar">✕</button>
-    </div>`).join('');
+    </div>
+    ${canLoan?`<div class="loanrow" data-h="${i}">
+      <label><input type="checkbox" class="loanck" ${mv.loanTo?'checked':''}> ⇄ Es un préstamo a otra empresa/proyecto</label>
+      <select class="loansel" style="display:${mv.loanTo?'inline-block':'none'}">
+        <option value="">Elegí destino…</option>
+        ${otherCtxs.map(c=>`<option value="${c.id}" ${mv.loanTo===c.id?'selected':''}>${esc(ctxLabel(c))}</option>`).join('')}
+      </select>
+    </div>`:''}`).join('');
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.movs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcEditor()});
@@ -1038,6 +1110,14 @@ function renderMovRows(){
     row.querySelector('.amount').oninput=e=>{edState.movs[i].amt=e.target.value;recalcEditor()};
     row.querySelector('.rmrow').onclick=()=>{edState.movs.splice(i,1);if(!edState.movs.length)edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   });
+  if(canLoan){
+    list.querySelectorAll('.loanrow').forEach(lr=>{
+      const i=+lr.dataset.h;
+      const chk=lr.querySelector('.loanck'),sel=lr.querySelector('.loansel');
+      chk.onchange=()=>{sel.style.display=chk.checked?'inline-block':'none';edState.movs[i].loanTo=chk.checked?sel.value:'';};
+      sel.onchange=()=>{edState.movs[i].loanTo=sel.value};
+    });
+  }
 }
 function num(v){if(v===''||v==null)return null;const n=parseFloat((''+v).replace(/[^\d.\-]/g,''));return isNaN(n)?null:n}
 function computeEditor(){
@@ -1048,7 +1128,7 @@ function computeEditor(){
     const sign=mv.type==='out'?-1:1;
     let imp=Math.round(sign*a*100)/100;
     if(imp>=0)ing+=imp;else egr+=imp;
-    movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim()});
+    movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim(),loanTo:mv.loanTo||''});
   });
   const sf=Math.round((si+ing+egr)*100)/100;
   return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
@@ -1065,6 +1145,9 @@ function saveDay(){
   if(!iso){err.textContent='Elegí una fecha.';return}
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
+  for(const m of c.movs){
+    if(m.loanTo&&!contexts.some(x=>x.id===m.loanTo)){err.textContent='El proyecto destino elegido para el préstamo ya no existe.';return}
+  }
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
   const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value);
   const[y,mo,dd]=iso.split('-').map(Number);
@@ -1074,6 +1157,22 @@ function saveDay(){
     movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref}))};
   if(editIso){const idx=userDays.findIndex(d=>d.iso===editIso);if(idx>=0)userDays[idx]=rec;else userDays.push(rec)}
   else userDays.push(rec);
+  if(!editIso){
+    const thisCtx=activeContext();
+    c.movs.forEach(m=>{
+      if(!m.loanTo)return;
+      const destCtx=contexts.find(x=>x.id===m.loanTo);if(!destCtx)return;
+      const id='ln_'+loans.length+'_'+Math.random().toString(36).slice(2,8);
+      const noteTxt=m.cpt?(' — '+m.cpt):'';
+      applyLoanMovement(destCtx.id,CUR,iso,-m.imp,(m.imp<0?'Préstamo de ':'Préstamo a ')+ctxLabel(thisCtx)+noteTxt,'PRESTAMO#'+id);
+      loans.push({id,iso,
+        from:m.imp<0?{id:thisCtx.id,empresa:thisCtx.empresa,proyecto:thisCtx.proyecto}:{id:destCtx.id,empresa:destCtx.empresa,proyecto:destCtx.proyecto},
+        to:m.imp<0?{id:destCtx.id,empresa:destCtx.empresa,proyecto:destCtx.proyecto}:{id:thisCtx.id,empresa:thisCtx.empresa,proyecto:thisCtx.proyecto},
+        cur:CUR,amount:Math.abs(m.imp),note:m.cpt||''});
+    });
+    saveLoans();
+  }
+  cascadeChain(activeContextId,CUR,userDays);
   saveUser();openMonths.add(y+'-'+String(mo).padStart(2,'0'));
   const wasEdit=!!editIso;closeEditor();renderAll();
   toast(wasEdit?'Día actualizado':'Día agregado correctamente');
@@ -1081,7 +1180,9 @@ function saveDay(){
 }
 function deleteDay(iso){
   if(!confirm('¿Eliminar este día y todos sus movimientos? Esta acción no se puede deshacer.'))return;
-  userDays=userDays.filter(d=>d.iso!==iso);saveUser();closeEditor();closeModal();renderAll();toast('Día eliminado');
+  userDays=userDays.filter(d=>d.iso!==iso);
+  cascadeChain(activeContextId,CUR,userDays);
+  saveUser();closeEditor();closeModal();renderAll();toast('Día eliminado');
 }
 function editDay(iso){const d=days.find(x=>x.iso===iso);closeModal();if(d)openEditor(d)}
 function closeEditor(){document.getElementById('edOverlay').classList.remove('on');if(!document.getElementById('overlay').classList.contains('on'))document.body.style.overflow=''}
