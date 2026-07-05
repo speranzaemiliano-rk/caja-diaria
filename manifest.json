@@ -2,7 +2,7 @@
   "name": "Caja Diaria",
   "short_name": "Caja Diaria",
   "description": "Control de caja diario · Movimientos, análisis y control por empresa y proyecto",
-  "start_url": "./app.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
