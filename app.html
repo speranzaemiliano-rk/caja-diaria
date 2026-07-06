@@ -322,7 +322,8 @@ tbody tr:last-child td{border-bottom:none}
       <div class="actions">
         <button class="btn-ghost" id="installBtn" style="display:none" title="Instalar la app en este dispositivo">⇩ Instalar app</button>
         <button class="btn-ghost" id="emailBackupBtn" title="Configurar respaldo diario automático por email">✉ Backup diario</button>
-        <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo">⤓ Respaldo</button>
+        <button class="btn-ghost" id="excelBtn" title="Descargar Excel (.xlsx) con todas las cajas">⬇ Excel</button>
+        <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo (.json que la app puede volver a cargar)">⤓ Respaldo</button>
         <button class="btn-primary" id="newDayBtn">＋ Nuevo día</button>
       </div>
     </div>
@@ -1262,6 +1263,31 @@ function fullBackupPayload(){
   contexts.forEach(c=>{data[c.id]={ARS:loadUserDaysFor(c.id,'ARS'),USD:loadUserDaysFor(c.id,'USD')}});
   return {exportedAt:todayIso(),contexts,data,loans};
 }
+/* --- EmailJS (envío automático real) --- */
+const EJS_PUB='caja_ejs_public',EJS_SVC='caja_ejs_service',EJS_TPL='caja_ejs_template';
+function emailjsCfg(){return {pub:(localStorage.getItem(EJS_PUB)||'').trim(),svc:(localStorage.getItem(EJS_SVC)||'').trim(),tpl:(localStorage.getItem(EJS_TPL)||'').trim()}}
+function emailjsReady(){const c=emailjsCfg();return !!(c.pub&&c.svc&&c.tpl)}
+let _ejsLoad=null;
+function loadEmailJs(){
+  if(window.emailjs)return Promise.resolve(window.emailjs);
+  if(_ejsLoad)return _ejsLoad;
+  _ejsLoad=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';s.onload=()=>res(window.emailjs);s.onerror=()=>rej(new Error('no se pudo cargar EmailJS'));document.head.appendChild(s)});
+  return _ejsLoad;
+}
+function b64utf8(str){return btoa(unescape(encodeURIComponent(str)))}
+function sendBackupViaEmailJS(email,payloadStr,fname,today){
+  const c=emailjsCfg();
+  return loadEmailJs().then(ejs=>{
+    ejs.init({publicKey:c.pub});
+    return ejs.send(c.svc,c.tpl,{
+      to_email:email,
+      subject:'Respaldo diario · Caja Diaria · '+today,
+      message:'Respaldo automático del '+today+'. Adjunto: '+fname+' — se puede volver a cargar en la app con Respaldo → Importar.',
+      backup_name:fname,
+      backup_file:b64utf8(payloadStr)
+    });
+  });
+}
 function maybeAutoBackup(){
   const email=(localStorage.getItem(BACKUP_EMAIL_KEY)||'').trim();
   if(!email)return;
@@ -1271,22 +1297,50 @@ function maybeAutoBackup(){
   const hasData=contexts.some(c=>loadUserDaysFor(c.id,'ARS').length||loadUserDaysFor(c.id,'USD').length);
   if(!hasData)return;
   const fname='respaldo_completo_'+today+'.json';
-  dl(fname,JSON.stringify(fullBackupPayload(),null,1),'application/json');
-  try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
-  setTimeout(()=>{
-    const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
-    const body=encodeURIComponent('Respaldo automático del '+today+'.\n\nSe descargó recién el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos incluidos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
-    window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
-  },700);
-  setTimeout(()=>toast('Respaldo diario descargado ('+fname+'). Adjuntalo al borrador de email y envialo.'),1300);
+  const payloadStr=JSON.stringify(fullBackupPayload());
+  if(emailjsReady()){
+    sendBackupViaEmailJS(email,payloadStr,fname,today).then(()=>{
+      try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
+      toast('Respaldo diario enviado por email a '+email);
+    }).catch(err=>{
+      dl(fname,payloadStr,'application/json');
+      setTimeout(()=>{
+        const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
+        const body=encodeURIComponent('El envío automático falló ('+((err&&err.text)||(err&&err.message)||err)+'). Se descargó "'+fname+'" — adjuntalo y envialo.');
+        window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
+      },400);
+      toast('Envío automático falló; se descargó el respaldo para adjuntar.');
+    });
+  }else{
+    dl(fname,payloadStr,'application/json');
+    try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
+    setTimeout(()=>{
+      const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
+      const body=encodeURIComponent('Respaldo automático del '+today+'.\n\nSe descargó recién el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos incluidos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
+      window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
+    },700);
+    setTimeout(()=>toast('Respaldo diario descargado ('+fname+'). Adjuntalo al borrador de email y envialo.'),1300);
+  }
 }
 document.getElementById('emailBackupBtn').onclick=()=>{
   const email=localStorage.getItem(BACKUP_EMAIL_KEY)||'';
   const enabled=localStorage.getItem(BACKUP_ENABLED_KEY)!=='0';
-  const status=email?('Email actual: '+email+'\nEstado: '+(enabled?'Activado':'Desactivado')):'Todavía no configuraste un email para el respaldo diario.';
-  if(confirm(`Backup diario por email\n\n${status}\n\nCada vez que abras la app, si ya pasó un día desde el último respaldo, se descarga un .json con todo (todas las empresas/proyectos/cajas) y se abre un borrador de email para que lo envíes con el archivo adjunto.\n\nAceptar = Configurar / cambiar email\nCancelar = ${enabled?'Desactivar':'Activar'} el recordatorio diario`)){
-    const v=(prompt('Email donde recibir el recordatorio de respaldo diario:',email)||'').trim();
-    if(v){try{localStorage.setItem(BACKUP_EMAIL_KEY,v);localStorage.setItem(BACKUP_ENABLED_KEY,'1')}catch(e){}toast('Email de respaldo configurado: '+v)}
+  const auto=emailjsReady();
+  const status=(email?('Email: '+email):'Sin email configurado')+'\nEstado: '+(enabled?'Activado':'Desactivado')+'\nEnvío: '+(auto?'AUTOMÁTICO (EmailJS)':'Borrador manual (mailto)');
+  if(confirm('Backup diario por email\n\n'+status+'\n\nAl abrir la app, si pasó un día, se respalda TODO (todas las cajas) y se envía a tu mail — el archivo .json se puede volver a cargar con Respaldo → Importar.\n\nAceptar = Configurar email y envío\nCancelar = '+(enabled?'Desactivar':'Activar')+' el respaldo diario')){
+    const v=(prompt('Email donde recibir el respaldo diario:',email)||'').trim();
+    if(v){try{localStorage.setItem(BACKUP_EMAIL_KEY,v);localStorage.setItem(BACKUP_ENABLED_KEY,'1')}catch(e){}}
+    if(confirm('¿Configurar ENVÍO AUTOMÁTICO real con EmailJS?\n\nNecesitás una cuenta gratis en emailjs.com y 3 datos: Service ID, Template ID y Public Key.\n\nAceptar = pegar mis 3 claves ahora\nCancelar = usar borrador manual (mailto)')){
+      const cfg=emailjsCfg();
+      const svc=(prompt('EmailJS · Service ID:',cfg.svc)||'').trim();
+      const tpl=(prompt('EmailJS · Template ID:',cfg.tpl)||'').trim();
+      const pub=(prompt('EmailJS · Public Key:',cfg.pub)||'').trim();
+      try{localStorage.setItem(EJS_SVC,svc);localStorage.setItem(EJS_TPL,tpl);localStorage.setItem(EJS_PUB,pub)}catch(e){}
+      toast(emailjsReady()?('Envío automático activado'+(v?' → '+v:'')):'Faltan datos de EmailJS; queda en borrador manual');
+    }else{
+      try{localStorage.removeItem(EJS_SVC);localStorage.removeItem(EJS_TPL);localStorage.removeItem(EJS_PUB)}catch(e){}
+      toast(v?('Respaldo diario en modo borrador → '+v):'Configurado en modo borrador manual');
+    }
   }else{
     try{localStorage.setItem(BACKUP_ENABLED_KEY,enabled?'0':'1')}catch(e){}
     toast('Backup diario '+(enabled?'desactivado':'activado'));
@@ -1310,6 +1364,67 @@ window.addEventListener('appinstalled',()=>{installBtn.style.display='none';defe
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})});
 }
+
+/* ============ Excel (.xlsx real, multi-hoja, sin librerías) ============ */
+function dlBytes(name,bytes,mime){const blob=new Blob([bytes],{type:mime||'application/octet-stream'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},120)}
+function num0(v){return typeof v==='number'&&isFinite(v)?v:(v==null||v===''?0:(parseFloat((''+v).replace(/[^\d.\-]/g,''))||0))}
+function allDaysFor(ctxId,cur){const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);loadUserDaysFor(ctxId,cur).forEach(d=>map[d.iso]=d);return Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0)}
+const _CRC=(()=>{let t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0}return t})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=_CRC[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+function _u16(n){return [n&255,(n>>8)&255]}
+function _u32(n){return [n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]}
+function zipStore(files){
+  const enc=new TextEncoder(),chunks=[],central=[];let offset=0;
+  files.forEach(f=>{
+    const nameB=enc.encode(f.name),crc=crc32(f.data),size=f.data.length;
+    const lh=new Uint8Array([].concat(_u32(0x04034b50),_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),_u32(crc),_u32(size),_u32(size),_u16(nameB.length),_u16(0)));
+    chunks.push(lh,nameB,f.data);
+    const cd=new Uint8Array([].concat(_u32(0x02014b50),_u16(20),_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),_u32(crc),_u32(size),_u32(size),_u16(nameB.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(offset)));
+    central.push({cd,nameB});
+    offset+=lh.length+nameB.length+size;
+  });
+  const cdStart=offset;let cdSize=0;
+  central.forEach(c=>{chunks.push(c.cd,c.nameB);cdSize+=c.cd.length+c.nameB.length});
+  chunks.push(new Uint8Array([].concat(_u32(0x06054b50),_u16(0),_u16(0),_u16(files.length),_u16(files.length),_u32(cdSize),_u32(cdStart),_u16(0))));
+  let total=0;chunks.forEach(c=>total+=c.length);const out=new Uint8Array(total);let p=0;chunks.forEach(c=>{out.set(c,p);p+=c.length});
+  return out;
+}
+function _colL(n){let s='';n++;while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s}
+function _xesc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function _sheetXml(rows){
+  let x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  rows.forEach((row,ri)=>{x+='<row r="'+(ri+1)+'">';row.forEach((cell,ci)=>{const ref=_colL(ci)+(ri+1);if(typeof cell==='number'&&isFinite(cell)){x+='<c r="'+ref+'"><v>'+cell+'</v></c>'}else{x+='<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+_xesc(cell==null?'':cell)+'</t></is></c>'}});x+='</row>'});
+  return x+'</sheetData></worksheet>';
+}
+function buildXlsx(sheets){
+  const enc=new TextEncoder(),files=[];
+  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+sheets.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>';
+  const rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  const wb='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map((s,i)=>'<sheet name="'+_xesc(s.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>';
+  const wbr='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'</Relationships>';
+  files.push({name:'[Content_Types].xml',data:enc.encode(ct)});
+  files.push({name:'_rels/.rels',data:enc.encode(rels)});
+  files.push({name:'xl/workbook.xml',data:enc.encode(wb)});
+  files.push({name:'xl/_rels/workbook.xml.rels',data:enc.encode(wbr)});
+  sheets.forEach((s,i)=>files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml',data:enc.encode(_sheetXml(s.rows))}));
+  return zipStore(files);
+}
+function downloadExcel(){
+  const resumen=[['Empresa','Proyecto','Caja','Fecha','Día','Saldo inicial','Ingresos','Egresos','Saldo final','Diferencia']];
+  const movim=[['Empresa','Proyecto','Caja','Fecha','Tipo','Concepto','Referencia','Importe']];
+  contexts.forEach(c=>['ARS','USD'].forEach(cur=>{
+    allDaysFor(c.id,cur).forEach(d=>{
+      resumen.push([c.empresa,c.proyecto,cur,d.date||d.iso,d.wd||'',num0(d.si),num0(d.ing),num0(d.egr),num0(d.sf),(d.dif==null||d.dif==='')?'':num0(d.dif)]);
+      (d.movs||[]).forEach(m=>movim.push([c.empresa,c.proyecto,cur,d.date||d.iso,(m.imp<0?'Egreso':'Ingreso'),m.cpt||'',m.ref||'',Math.round(num0(m.imp)*100)/100]));
+    });
+  }));
+  const prest=[['Fecha','Origen','Destino','Moneda','Importe','Nota']];
+  loans.slice().sort((a,b)=>a.iso<b.iso?-1:1).forEach(l=>prest.push([l.iso.split('-').reverse().join('/'),ctxLabel(l.from),ctxLabel(l.to),l.cur,Math.round(num0(l.amount)*100)/100,l.note||'']));
+  const bytes=buildXlsx([{name:'Resumen diario',rows:resumen},{name:'Movimientos',rows:movim},{name:'Préstamos',rows:prest}]);
+  dlBytes('caja_diaria_'+todayIso()+'.xlsx',bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast('Excel descargado — '+(resumen.length-1)+' días, '+(movim.length-1)+' movimientos');
+}
+document.getElementById('excelBtn').onclick=downloadExcel;
 
 /* ============ init ============ */
 renderCtxSelectors();
