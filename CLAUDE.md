@@ -8,9 +8,9 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | **Landing / home** (clara, minimalista). Es la portada del sitio. Linkea a la app con "Abrir la app". |
-| `app.html` | **La app real**: "Control de Caja Diario · Movimientos" (tema oscuro dorado). Todo el producto vive acá. |
-| `manifest.json` | PWA. `start_url: "./index.html"` → la app instalada abre el **home**. `scope: "./"`. |
+| `index.html` | **La app** (home + app unificados): "Control de Caja Diario · Movimientos" (tema oscuro dorado). Al entrar al sitio ya estás en la caja. Todo el producto vive acá. |
+| `app.html` | **Redirección** a la raíz (`location.replace('./')`). Queda por compatibilidad con marcadores/PWA viejos; ya no hay landing separada. |
+| `manifest.json` | PWA. `start_url: "./"` → la app instalada abre la caja. `scope: "./"`. Splash oscuro (`#0b0f14`). |
 | `sw.js` | Service worker (cache-first). Cachea `./`, `index.html`, `app.html`, manifest e íconos. **Al tocar HTML, subí `CACHE` (`caja-diaria-vN`)** para purgar la caché vieja. |
 | `icon-192.png` / `icon-512.png` | Íconos de la PWA. |
 | `.github/workflows/deploy-pages.yml` | Deploy automático a GitHub Pages en cada push a `main` (usa `configure-pages` con `enablement:true`). |
