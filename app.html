@@ -1288,6 +1288,42 @@ function sendBackupViaEmailJS(email,payloadStr,fname,today){
     });
   });
 }
+/* --- Google Apps Script (envío automático sin límite de tamaño) --- */
+const BACKUP_METHOD_KEY='caja_backup_method_v1',BACKUP_URL_KEY='caja_backup_url_v1';
+function backupUrl(){return (localStorage.getItem(BACKUP_URL_KEY)||'').trim()}
+function backupMethod(){return localStorage.getItem(BACKUP_METHOD_KEY)||(backupUrl()?'google':(emailjsReady()?'emailjs':'draft'))}
+function sendViaAppsScript(url,email,payloadStr,fname,today){
+  return fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({to:email,subject:'Respaldo diario · Caja Diaria · '+today,filename:fname,content:payloadStr,
+      message:'Respaldo automático del '+today+'. Adjunto '+fname+' — se vuelve a cargar en la app con Respaldo → Importar.'})});
+}
+function draftFallback(email,payloadStr,fname,today,reason){
+  dl(fname,payloadStr,'application/json');
+  setTimeout(()=>{
+    const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
+    const body=encodeURIComponent((reason?('('+reason+') '):'')+'Se descargó el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
+    window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
+  },500);
+}
+function sendBackupNow(opts){
+  opts=opts||{};
+  const email=(opts.email!=null?opts.email:(localStorage.getItem(BACKUP_EMAIL_KEY)||'')).trim();
+  const today=todayIso();
+  const fname='respaldo_completo_'+today+'.json';
+  const payloadStr=JSON.stringify(fullBackupPayload());
+  const method=opts.method||backupMethod();
+  if(method==='google'){
+    const url=(opts.url!=null?opts.url:backupUrl()).trim();
+    if(!url)return Promise.reject(new Error('falta la URL de Apps Script'));
+    return sendViaAppsScript(url,email,payloadStr,fname,today).then(()=>({method:'google',email}));
+  }
+  if(method==='emailjs'){
+    if(!emailjsReady())return Promise.reject(new Error('faltan claves de EmailJS'));
+    return sendBackupViaEmailJS(email,payloadStr,fname,today).then(()=>({method:'emailjs',email}));
+  }
+  draftFallback(email,payloadStr,fname,today,'');
+  return Promise.resolve({method:'draft',email});
+}
 function maybeAutoBackup(){
   const email=(localStorage.getItem(BACKUP_EMAIL_KEY)||'').trim();
   if(!email)return;
@@ -1296,56 +1332,109 @@ function maybeAutoBackup(){
   if(localStorage.getItem(BACKUP_LAST_KEY)===today)return;
   const hasData=contexts.some(c=>loadUserDaysFor(c.id,'ARS').length||loadUserDaysFor(c.id,'USD').length);
   if(!hasData)return;
-  const fname='respaldo_completo_'+today+'.json';
-  const payloadStr=JSON.stringify(fullBackupPayload());
-  if(emailjsReady()){
-    sendBackupViaEmailJS(email,payloadStr,fname,today).then(()=>{
-      try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
-      toast('Respaldo diario enviado por email a '+email);
-    }).catch(err=>{
-      dl(fname,payloadStr,'application/json');
-      setTimeout(()=>{
-        const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
-        const body=encodeURIComponent('El envío automático falló ('+((err&&err.text)||(err&&err.message)||err)+'). Se descargó "'+fname+'" — adjuntalo y envialo.');
-        window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
-      },400);
-      toast('Envío automático falló; se descargó el respaldo para adjuntar.');
-    });
-  }else{
-    dl(fname,payloadStr,'application/json');
+  sendBackupNow().then(r=>{
     try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
-    setTimeout(()=>{
-      const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
-      const body=encodeURIComponent('Respaldo automático del '+today+'.\n\nSe descargó recién el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos incluidos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
-      window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
-    },700);
-    setTimeout(()=>toast('Respaldo diario descargado ('+fname+'). Adjuntalo al borrador de email y envialo.'),1300);
-  }
+    toast(r.method==='draft'?'Respaldo diario descargado. Adjuntalo al borrador y envialo.':'Respaldo diario enviado a '+email);
+  }).catch(err=>{
+    const fname='respaldo_completo_'+today+'.json';
+    draftFallback(email,JSON.stringify(fullBackupPayload()),fname,today,(err&&err.message)||'falló el envío');
+    try{localStorage.setItem(BACKUP_LAST_KEY,today)}catch(e){}
+    toast('El envío automático falló; se descargó el respaldo para adjuntar.');
+  });
 }
-document.getElementById('emailBackupBtn').onclick=()=>{
+
+/* --- panel de configuración (modal, con guía adentro) --- */
+const APPS_SCRIPT_CODE='function doPost(e){\n  var d = JSON.parse(e.postData.contents);\n  GmailApp.sendEmail(d.to, d.subject, d.message, {\n    attachments: [Utilities.newBlob(d.content, "application/json", d.filename)]\n  });\n  return ContentService.createTextOutput("ok");\n}';
+function openBackupSettings(){
   const email=localStorage.getItem(BACKUP_EMAIL_KEY)||'';
   const enabled=localStorage.getItem(BACKUP_ENABLED_KEY)!=='0';
-  const auto=emailjsReady();
-  const status=(email?('Email: '+email):'Sin email configurado')+'\nEstado: '+(enabled?'Activado':'Desactivado')+'\nEnvío: '+(auto?'AUTOMÁTICO (EmailJS)':'Borrador manual (mailto)');
-  if(confirm('Backup diario por email\n\n'+status+'\n\nAl abrir la app, si pasó un día, se respalda TODO (todas las cajas) y se envía a tu mail — el archivo .json se puede volver a cargar con Respaldo → Importar.\n\nAceptar = Configurar email y envío\nCancelar = '+(enabled?'Desactivar':'Activar')+' el respaldo diario')){
-    const v=(prompt('Email donde recibir el respaldo diario:',email)||'').trim();
-    if(v){try{localStorage.setItem(BACKUP_EMAIL_KEY,v);localStorage.setItem(BACKUP_ENABLED_KEY,'1')}catch(e){}}
-    if(confirm('¿Configurar ENVÍO AUTOMÁTICO real con EmailJS?\n\nNecesitás una cuenta gratis en emailjs.com y 3 datos: Service ID, Template ID y Public Key.\n\nAceptar = pegar mis 3 claves ahora\nCancelar = usar borrador manual (mailto)')){
-      const cfg=emailjsCfg();
-      const svc=(prompt('EmailJS · Service ID:',cfg.svc)||'').trim();
-      const tpl=(prompt('EmailJS · Template ID:',cfg.tpl)||'').trim();
-      const pub=(prompt('EmailJS · Public Key:',cfg.pub)||'').trim();
-      try{localStorage.setItem(EJS_SVC,svc);localStorage.setItem(EJS_TPL,tpl);localStorage.setItem(EJS_PUB,pub)}catch(e){}
-      toast(emailjsReady()?('Envío automático activado'+(v?' → '+v:'')):'Faltan datos de EmailJS; queda en borrador manual');
-    }else{
-      try{localStorage.removeItem(EJS_SVC);localStorage.removeItem(EJS_TPL);localStorage.removeItem(EJS_PUB)}catch(e){}
-      toast(v?('Respaldo diario en modo borrador → '+v):'Configurado en modo borrador manual');
-    }
-  }else{
-    try{localStorage.setItem(BACKUP_ENABLED_KEY,enabled?'0':'1')}catch(e){}
-    toast('Backup diario '+(enabled?'desactivado':'activado'));
+  const url=backupUrl();const cfg=emailjsCfg();let method=backupMethod();
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">✉</div>
+      <div><h3>Respaldo diario por email</h3><div class="msub">Al abrir la app una vez al día, se respalda TODO (todas las cajas) y se envía a tu mail. El archivo .json se vuelve a cargar con ⤓ Respaldo → Importar.</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer">
+        <input type="checkbox" id="bk_enabled" ${enabled?'checked':''} style="width:18px;height:18px"> <b>Respaldo diario activado</b>
+      </label>
+      <div class="field"><label>Email donde recibir el respaldo</label><input id="bk_email" value="${esc(email)}" placeholder="tu@email.com"></div>
+      <div class="ed-sub" style="margin:16px 0 10px">Método de envío <div class="ln2"></div></div>
+      <div class="seg" id="bk_methods" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:4px">
+        <button type="button" data-m="google" style="font-family:inherit;font-weight:600;border:none;background:transparent;color:var(--ink2);padding:9px;border-radius:8px;cursor:pointer">Google (recomendado)</button>
+        <button type="button" data-m="emailjs" style="font-family:inherit;font-weight:600;border:none;background:transparent;color:var(--ink2);padding:9px;border-radius:8px;cursor:pointer">EmailJS</button>
+        <button type="button" data-m="draft" style="font-family:inherit;font-weight:600;border:none;background:transparent;color:var(--ink2);padding:9px;border-radius:8px;cursor:pointer">Borrador manual</button>
+      </div>
+      <div id="bk_google" style="margin-top:14px">
+        <div class="field"><label>URL de la app de Google Apps Script</label><input id="bk_url" value="${esc(url)}" placeholder="https://script.google.com/macros/s/AKfy.../exec"></div>
+        <details style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 14px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">¿Cómo activar el envío automático? (5 min, gratis)</summary>
+          <ol style="margin:12px 0 0 18px;font-size:13.5px;line-height:1.7;color:var(--ink2)">
+            <li>Entrá a <b>script.google.com</b> → <b>Proyecto nuevo</b>.</li>
+            <li>Borrá lo que haya, pegá este código (botón <b>Copiar</b>) y guardá (💾).</li>
+            <li><b>Implementar → Nueva implementación</b> → tipo <b>Aplicación web</b>.</li>
+            <li>“Ejecutar como”: <b>Yo</b>. “Quién tiene acceso”: <b>Cualquiera</b>.</li>
+            <li><b>Implementar</b> → autorizá con tu cuenta de Google → copiá la <b>URL</b> (termina en <b>/exec</b>).</li>
+            <li>Pegá esa URL arriba → <b>Guardar</b> → <b>Probar envío ahora</b> y fijate que te llegue el mail.</li>
+          </ol>
+          <div style="position:relative;margin-top:10px">
+            <button class="btn-ghost" id="bk_copy" type="button" style="position:absolute;top:6px;right:6px;padding:5px 10px;font-size:12px">Copiar</button>
+            <pre id="bk_code" style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre;margin:0">${esc(APPS_SCRIPT_CODE)}</pre>
+          </div>
+        </details>
+      </div>
+      <div id="bk_ejs" style="margin-top:14px;display:none">
+        <div class="field"><label>EmailJS · Service ID</label><input id="bk_svc" value="${esc(cfg.svc)}" placeholder="service_xxx"></div>
+        <div class="field" style="margin-top:8px"><label>EmailJS · Template ID</label><input id="bk_tpl" value="${esc(cfg.tpl)}" placeholder="template_xxx"></div>
+        <div class="field" style="margin-top:8px"><label>EmailJS · Public Key</label><input id="bk_pub" value="${esc(cfg.pub)}" placeholder="xxxxxxxx"></div>
+        <p style="font-size:12.5px;color:var(--ink3);margin-top:8px">Ojo: el plan gratis de EmailJS limita el tamaño; si el respaldo es grande puede fallar. Para respaldos grandes usá Google.</p>
+      </div>
+      <div id="bk_draft" style="margin-top:14px;display:none">
+        <p style="font-size:13.5px;color:var(--ink2)">Sin envío automático: al abrir la app se <b>descarga</b> el respaldo y se abre el mail ya escrito para que lo <b>adjuntes y envíes</b> a mano. 100% local.</p>
+      </div>
+      <div id="bk_err" class="errline" style="margin-top:10px"></div>
+    </div>
+    <div class="ed-foot">
+      <button class="btn-ghost" id="bk_test" type="button">✈ Probar envío ahora</button>
+      <div style="margin-left:auto;display:flex;gap:10px">
+        <button class="btn-ghost" onclick="closeModal()">Cerrar</button>
+        <button class="btn-primary" id="bk_save" type="button">Guardar</button>
+      </div>
+    </div>`;
+  const setMethod=m=>{method=m;
+    document.querySelectorAll('#bk_methods button').forEach(b=>{const on=b.dataset.m===m;b.style.background=on?'var(--panel)':'transparent';b.style.color=on?'var(--gold2)':'var(--ink2)';b.style.boxShadow=on?'inset 0 0 0 1px var(--line2)':'none'});
+    document.getElementById('bk_google').style.display=m==='google'?'block':'none';
+    document.getElementById('bk_ejs').style.display=m==='emailjs'?'block':'none';
+    document.getElementById('bk_draft').style.display=m==='draft'?'block':'none';
+  };
+  document.querySelectorAll('#bk_methods button').forEach(b=>b.onclick=()=>setMethod(b.dataset.m));
+  setMethod(method);
+  document.getElementById('bk_copy').onclick=()=>{navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>toast('Código copiado')).catch(()=>{const p=document.getElementById('bk_code');const r=document.createRange();r.selectNodeContents(p);const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Seleccioná y copiá (Ctrl+C)')})};
+  function readInputs(){
+    const em=(document.getElementById('bk_email').value||'').trim();
+    try{
+      localStorage.setItem(BACKUP_EMAIL_KEY,em);
+      localStorage.setItem(BACKUP_ENABLED_KEY,document.getElementById('bk_enabled').checked?'1':'0');
+      localStorage.setItem(BACKUP_METHOD_KEY,method);
+      localStorage.setItem(BACKUP_URL_KEY,(document.getElementById('bk_url').value||'').trim());
+      localStorage.setItem(EJS_SVC,(document.getElementById('bk_svc').value||'').trim());
+      localStorage.setItem(EJS_TPL,(document.getElementById('bk_tpl').value||'').trim());
+      localStorage.setItem(EJS_PUB,(document.getElementById('bk_pub').value||'').trim());
+    }catch(e){}
+    return em;
   }
-};
+  document.getElementById('bk_save').onclick=()=>{readInputs();closeModal();toast('Respaldo diario guardado')};
+  document.getElementById('bk_test').onclick=()=>{
+    const err=document.getElementById('bk_err');err.textContent='';
+    const em=readInputs();
+    if(!em){err.textContent='Poné un email primero.';return}
+    toast('Enviando respaldo de prueba…');
+    sendBackupNow({email:em,method}).then(r=>{
+      toast(r.method==='draft'?'Respaldo descargado (adjuntalo al borrador)':'Respaldo de prueba enviado a '+em+' — revisá tu correo');
+    }).catch(e=>{err.textContent='No se pudo enviar: '+((e&&e.message)||e)+'. Revisá la URL/claves.'});
+  };
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+document.getElementById('emailBackupBtn').onclick=openBackupSettings;
 
 /* ============ PWA install ============ */
 let deferredInstall=null;
