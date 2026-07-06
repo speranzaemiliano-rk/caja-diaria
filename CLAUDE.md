@@ -44,6 +44,7 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
   - **Google Apps Script** (recomendado, sin límite de tamaño): POST `no-cors` a la URL `/exec`; el script del usuario manda el mail con el `.json` adjunto. La guía + el código están dentro del modal.
   - **EmailJS** (alternativo; el plan free limita el tamaño → puede fallar con respaldos grandes).
   - **Borrador manual** (mailto + descarga). Es el fallback si el envío automático falla.
+- **☁ Nube** (`openSyncSettings`/`startSync`): **sincronización entre dispositivos** (opcional) con **Firebase Firestore** (SDK compat por CDN, auth anónima). Doc `cajas/{codigo}` = `fullBackupPayload()`. `onSnapshot` baja cambios → `applyRemote()` los escribe en localStorage y re-renderiza; un `localStorage.setItem` interceptado dispara `schedulePush()` (debounce 900ms). El eco propio se ignora por `updatedBy===deviceId()`. El "código de caja" es la clave compartida entre dispositivos (misma en todos). Claves: `caja_sync_cfg_v1`, `caja_sync_code_v1`, `caja_sync_enabled_v1`, `caja_device_id_v1`. **Estado: en verificación (probado con Firebase mockeado; falta prueba con proyecto Firebase real).**
 
 ## Convenciones / cómo trabajar acá
 

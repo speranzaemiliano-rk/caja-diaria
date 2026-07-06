@@ -323,6 +323,7 @@ tbody tr:last-child td{border-bottom:none}
         <button class="btn-ghost" id="installBtn" style="display:none" title="Instalar la app en este dispositivo">⇩ Instalar app</button>
         <button class="btn-ghost" id="emailBackupBtn" title="Configurar respaldo diario automático por email">✉ Backup diario</button>
         <button class="btn-ghost" id="excelBtn" title="Descargar Excel (.xlsx) con todas las cajas">⬇ Excel</button>
+        <button class="btn-ghost" id="syncBtn" title="Sincronizar la caja entre dispositivos (nube)">☁ Nube</button>
         <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo (.json que la app puede volver a cargar)">⤓ Respaldo</button>
         <button class="btn-primary" id="newDayBtn">＋ Nuevo día</button>
       </div>
@@ -1515,11 +1516,126 @@ function downloadExcel(){
 }
 document.getElementById('excelBtn').onclick=downloadExcel;
 
+/* ============ Sincronización en la nube (Firebase, opcional) ============ */
+const SYNC_CFG_KEY='caja_sync_cfg_v1',SYNC_CODE_KEY='caja_sync_code_v1',SYNC_ENABLED_KEY='caja_sync_enabled_v1',DEVICE_ID_KEY='caja_device_id_v1';
+function syncCfg(){try{return JSON.parse(localStorage.getItem(SYNC_CFG_KEY)||'null')}catch(e){return null}}
+function syncCode(){return (localStorage.getItem(SYNC_CODE_KEY)||'').trim()}
+function syncOn(){return localStorage.getItem(SYNC_ENABLED_KEY)==='1'}
+function syncEnabled(){return syncOn()&&!!syncCfg()&&!!syncCode()}
+function deviceId(){let d=localStorage.getItem(DEVICE_ID_KEY);if(!d){d='dev_'+Math.random().toString(36).slice(2)+'_'+Date.now().toString(36);try{localStorage.setItem(DEVICE_ID_KEY,d)}catch(e){}}return d}
+let _fbApp=null,_db=null,_unsub=null,_applyingRemote=false,_pushTimer=null,_syncReady=false;
+function setSyncBadge(txt){const b=document.getElementById('syncBtn');if(b)b.title=txt||'Sincronizar la caja entre dispositivos (nube)'}
+function loadFirebase(){
+  if(window.firebase&&window.firebase.firestore)return Promise.resolve();
+  const base='https://www.gstatic.com/firebasejs/10.12.2/';
+  return ['firebase-app-compat.js','firebase-auth-compat.js','firebase-firestore-compat.js']
+    .reduce((p,f)=>p.then(()=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=base+f;s.onload=res;s.onerror=()=>rej(new Error('no se pudo cargar Firebase (¿sin internet?)'));document.head.appendChild(s)})),Promise.resolve());
+}
+function cloudPayload(){const p=fullBackupPayload();p.updatedBy=deviceId();p.updatedAt=Date.now();return p}
+function applyRemote(d){
+  _applyingRemote=true;
+  try{
+    if(Array.isArray(d.contexts))localStorage.setItem('caja_contexts_v1',JSON.stringify(d.contexts));
+    if(d.data&&typeof d.data==='object')Object.keys(d.data).forEach(id=>['ARS','USD'].forEach(cur=>{const arr=(d.data[id]||{})[cur];if(Array.isArray(arr))localStorage.setItem('caja_user_days_v2::'+id+'::'+cur,JSON.stringify(arr))}));
+    if(Array.isArray(d.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(d.loans));
+  }catch(e){}
+  try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();renderCtxSelectors();renderAll();}catch(e){}
+  _applyingRemote=false;
+}
+function schedulePush(){
+  if(!_syncReady||_applyingRemote||!_db)return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(()=>{try{_db.collection('cajas').doc(syncCode()).set(cloudPayload())}catch(e){}},900);
+}
+function startSync(){
+  if(!syncEnabled())return Promise.resolve();
+  setSyncBadge('Conectando a la nube…');
+  return loadFirebase().then(()=>{
+    const cfg=syncCfg();
+    if(firebase.apps&&firebase.apps.length){
+      const cur=firebase.app().options||{};
+      if(cur.projectId!==cfg.projectId||cur.apiKey!==cfg.apiKey)return firebase.app().delete().then(()=>{firebase.initializeApp(cfg)});
+    }else{firebase.initializeApp(cfg)}
+  }).then(()=>firebase.auth().signInAnonymously()).then(()=>{
+    _db=firebase.firestore();
+    const ref=_db.collection('cajas').doc(syncCode());
+    return ref.get().then(snap=>{
+      if(snap.exists){applyRemote(snap.data());_syncReady=true}
+      else{_syncReady=true;ref.set(cloudPayload())}
+      if(_unsub)_unsub();
+      _unsub=ref.onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data();if(d.updatedBy===deviceId())return;applyRemote(d);toast('Caja actualizada desde otro dispositivo')},err=>{setSyncBadge('Sync con error: '+(err&&err.message||err))});
+      setSyncBadge('Nube conectada ✓ (código: '+syncCode()+')');
+    });
+  });
+}
+/* Interceptar guardados locales para empujar a la nube (no invasivo) */
+(function(){const _si=localStorage.setItem.bind(localStorage);localStorage.setItem=function(k,v){_si(k,v);try{if(!_applyingRemote&&_syncReady&&/^caja_(contexts_v1|user_days_v2|loans_v1)/.test(k))schedulePush()}catch(e){}}})();
+function parseFirebaseCfg(text){
+  const m=(text||'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Pegá el objeto de configuración { ... } de Firebase');
+  const obj=Function('return ('+m[0]+')')();
+  if(!obj||!obj.apiKey||!obj.projectId)throw new Error('A la configuración le falta apiKey o projectId');
+  return obj;
+}
+const FS_RULES="rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /cajas/{codigo} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}";
+function openSyncSettings(){
+  const cfg=syncCfg();const code=syncCode();const on=syncEnabled();
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">☁</div>
+      <div><h3>Sincronizar entre dispositivos</h3><div class="msub">Guarda la caja en la nube (tu Firebase, gratis) para verla igual en la compu, el celu y cualquier navegador — se actualiza al instante en todos.</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      <div style="padding:10px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;color:${on?'var(--green)':'var(--ink3)'}">
+        Estado: <b>${on?'Sincronización activada':'No configurada'}</b>${on?(' · código <b>'+esc(code)+'</b>'):''}
+      </div>
+      <details style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px" ${on?'':'open'}>
+        <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">¿Cómo configurarlo? (una vez, gratis, ~5 min)</summary>
+        <ol style="margin:12px 0 0 18px;font-size:13.5px;line-height:1.7;color:var(--ink2)">
+          <li>Entrá a <b>console.firebase.google.com</b> → <b>Agregar proyecto</b> (gratis, sin tarjeta).</li>
+          <li>Adentro: ⚙ <b>Configuración del proyecto</b> → “Tus apps” → ícono <b>Web &lt;/&gt;</b> → registrá una app → copiá el objeto <b>firebaseConfig</b>.</li>
+          <li>Menú <b>Compilación → Firestore Database → Crear base de datos</b> (modo producción, cualquier ubicación).</li>
+          <li>Solapa <b>Reglas</b> → pegá estas reglas → <b>Publicar</b>:
+            <div style="position:relative;margin-top:6px"><button class="btn-ghost" id="sy_copyrules" type="button" style="position:absolute;top:6px;right:6px;padding:4px 9px;font-size:12px">Copiar</button><pre id="sy_rules" style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12px;margin:0;white-space:pre">${esc(FS_RULES)}</pre></div>
+          </li>
+          <li>Menú <b>Compilación → Authentication → Comenzar</b> → método <b>Anónimo</b> → <b>Habilitar</b>.</li>
+          <li>Volvé acá: pegá el firebaseConfig y elegí un <b>código de caja</b> (secreto y largo, EL MISMO en todos tus dispositivos) → <b>Guardar y conectar</b>.</li>
+          <li>En tu otra compu/navegador/celu: abrí el sitio → ☁ Nube → pegá el <b>mismo</b> config y el <b>mismo</b> código → vas a ver la misma caja.</li>
+        </ol>
+      </details>
+      <div class="field"><label>firebaseConfig (pegá el objeto completo)</label><textarea id="sy_cfg" rows="6" placeholder="const firebaseConfig = { apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, ... };" style="width:100%;font-family:var(--mono,monospace);font-size:12.5px;background:var(--bg2);color:var(--ink);border:1px solid var(--line-strong,#2c4055);border-radius:10px;padding:11px">${cfg?esc(JSON.stringify(cfg,null,2)):''}</textarea></div>
+      <div class="field" style="margin-top:8px"><label>Código de caja (secreto, igual en todos tus dispositivos)</label><input id="sy_code" value="${esc(code)}" placeholder="ej: caja-emiliano-7h3k9x" autocomplete="off"></div>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:8px">El código funciona como contraseña de tu caja: usá uno largo y no lo compartas. Los datos entran en un documento (límite ~1MB; para un comercio chico alcanza por años).</p>
+      <div id="sy_err" class="errline" style="margin-top:10px"></div>
+    </div>
+    <div class="ed-foot">
+      ${on?'<button class="btn-del del" id="sy_off" type="button">Desconectar</button>':'<div class="del"></div>'}
+      <div style="margin-left:auto;display:flex;gap:10px">
+        <button class="btn-ghost" onclick="closeModal()">Cerrar</button>
+        <button class="btn-primary" id="sy_save" type="button">Guardar y conectar</button>
+      </div>
+    </div>`;
+  document.getElementById('sy_copyrules').onclick=()=>{navigator.clipboard.writeText(FS_RULES).then(()=>toast('Reglas copiadas')).catch(()=>toast('Seleccioná y copiá (Ctrl+C)'))};
+  const offBtn=document.getElementById('sy_off');
+  if(offBtn)offBtn.onclick=()=>{try{localStorage.setItem(SYNC_ENABLED_KEY,'0')}catch(e){}if(_unsub){_unsub();_unsub=null}_syncReady=false;setSyncBadge();closeModal();toast('Sincronización desconectada (los datos siguen en este dispositivo)')};
+  document.getElementById('sy_save').onclick=()=>{
+    const err=document.getElementById('sy_err');err.textContent='';
+    let parsed;try{parsed=parseFirebaseCfg(document.getElementById('sy_cfg').value)}catch(e){err.textContent=e.message;return}
+    const codev=(document.getElementById('sy_code').value||'').trim();
+    if(codev.length<6){err.textContent='Elegí un código de al menos 6 caracteres.';return}
+    try{localStorage.setItem(SYNC_CFG_KEY,JSON.stringify(parsed));localStorage.setItem(SYNC_CODE_KEY,codev);localStorage.setItem(SYNC_ENABLED_KEY,'1')}catch(e){}
+    _syncReady=false;if(_unsub){_unsub();_unsub=null}
+    toast('Conectando a la nube…');
+    startSync().then(()=>{toast('✓ Sincronización activada');closeModal()}).catch(e=>{err.textContent='No se pudo conectar: '+((e&&e.message)||e)+'. Revisá el config, las reglas y que Auth Anónimo esté habilitado.'});
+  };
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+document.getElementById('syncBtn').onclick=openSyncSettings;
+
 /* ============ init ============ */
 renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
 setTimeout(maybeAutoBackup,1500);
+if(syncEnabled())setTimeout(()=>{startSync().catch(e=>toast('Sync: '+((e&&e.message)||e)))},300);
 </script>
 </body>
 </html>
