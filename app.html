@@ -321,6 +321,10 @@ body{background:var(--bg)}
 .btn-primary:hover{background:#1967d2;box-shadow:0 1px 3px rgba(60,64,67,.4);transform:none}
 .ed-head .ei{background:#1a73e8;color:#fff}
 tbody tr:hover{background:#f1f3f4}
+.rowacts{white-space:nowrap;text-align:right}
+.rowact{background:none;border:1px solid var(--line);border-radius:8px;width:30px;height:30px;color:var(--ink2);cursor:pointer;font-size:13px;transition:.15s;margin-left:5px;vertical-align:middle}
+.rowact:hover{border-color:#1a73e8;color:#1a73e8;background:#e8f0fe}
+.rowact.del:hover{border-color:var(--red);color:var(--red);background:var(--red-bg)}
 </style>
 </head>
 <body>
@@ -811,7 +815,8 @@ function renderIndex(){
     const rows=ds.slice().reverse().map(d=>`<tr onclick='openDayIso("${d.iso}")'>
         <td class="l"><span class="daynum">${d.d}</span><span class="wdtag">${d.wd}</span></td>
         <td>${peso(d.si)}</td><td class="pos">${d.ing?peso(d.ing):'—'}</td><td class="neg">${d.egr?pesoS(d.egr):'—'}</td>
-        <td style="color:var(--gold2);font-weight:600">${peso(d.sf)}</td><td>${d.nmov||'—'}</td><td class="l">${badge(d)}</td></tr>`).join('');
+        <td style="color:var(--gold2);font-weight:600">${peso(d.sf)}</td><td>${d.nmov||'—'}</td><td class="l">${badge(d)}</td>
+        <td class="rowacts" onclick="event.stopPropagation()">${d.src==='user'?`<button class="rowact" title="Editar día" onclick="editDay('${d.iso}')">✎</button><button class="rowact del" title="Eliminar día" onclick="deleteDay('${d.iso}')">🗑</button>`:''}</td></tr>`).join('');
     cont.insertAdjacentHTML('beforeend',`<div class="month">
         <div class="mhead ${isOpen?'open':''}" data-key="${m.key}" onclick="toggleM(this)">
           <span class="cv">▶</span>
@@ -819,7 +824,7 @@ function renderIndex(){
           <div class="mstats"><div><b>Ingresos</b><span class="pos">${peso(mIng)}</span></div><div><b>Egresos</b><span class="neg">${pesoS(mEgr)}</span></div><div><b>Cierre</b><span style="color:var(--gold2)">${peso(ds[ds.length-1].sf)}</span></div></div>
         </div>
         <div class="mbody" style="max-height:${isOpen?'9999px':'0'}">
-          <table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Mov.</th><th class="l">Estado</th></tr></thead><tbody>${rows}</tbody></table>
+          <table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Mov.</th><th class="l">Estado</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table>
         </div></div>`);
   });
   if(!shown)cont.innerHTML='<div class="empty-state"><div class="big">⌕</div>Sin resultados para los filtros aplicados</div>';
@@ -897,15 +902,15 @@ function renderMovs(){
   const ty=document.getElementById('movType').value;
   const yr=document.getElementById('movYear').value;
   let rows=[];
-  real.forEach(d=>{if(yr!=='all'&&String(d.y)!==yr)return;d.movs.forEach(m=>{
+  real.forEach(d=>{if(yr!=='all'&&String(d.y)!==yr)return;d.movs.forEach((m,mi)=>{
     if(ty==='in'&&m.imp<0)return;if(ty==='out'&&m.imp>=0)return;
     if(q){const hay=((m.cpt||'')+' '+(m.ref||'')+' '+Math.abs(m.imp)+' '+d.date).toLowerCase();if(!hay.includes(q))return}
-    rows.push({d,m});})});
+    rows.push({d,m,mi});})});
   rows.sort((a,b)=>a.d.iso<b.d.iso?1:-1);
   const tot=rows.reduce((s,r)=>s+r.m.imp,0);
   document.getElementById('movCount').innerHTML=`<span class="hl">${rows.length}</span> movimiento(s) · suma neta: <span class="${tot>=0?'pos':'neg'}" style="font-family:Roboto Mono">${pesoS(tot)}</span>`;
-  const body=rows.slice(0,600).map(r=>`<tr onclick='openDayIso("${r.d.iso}")'><td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td></tr>`).join('');
-  document.getElementById('movTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead><tbody>${body||'<tr><td colspan=4 class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>'}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=4 class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
+  const body=rows.slice(0,600).map(r=>`<tr onclick='openDayIso("${r.d.iso}")'><td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td><td class="rowacts" onclick="event.stopPropagation()">${r.d.src==='user'?`<button class="rowact" title="Editar (abre el día)" onclick="editDay('${r.d.iso}')">✎</button><button class="rowact del" title="Eliminar movimiento" onclick="deleteMov('${r.d.iso}',${r.mi})">🗑</button>`:''}</td></tr>`).join('');
+  document.getElementById('movTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th><th class="l"></th></tr></thead><tbody>${body||'<tr><td colspan=5 class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>'}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=5 class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
 }
 ['movSearch','movType','movYear'].forEach(id=>document.getElementById(id).addEventListener('input',renderMovs));
 
@@ -1259,6 +1264,20 @@ function deleteDay(iso){
   saveUser();closeEditor();closeModal();renderAll();toast('Día eliminado');
 }
 function editDay(iso){const d=days.find(x=>x.iso===iso);closeModal();if(d)openEditor(d)}
+function deleteMov(iso,idx){
+  const d=userDays.find(x=>x.iso===iso);
+  if(!d){toast('Solo podés editar/eliminar movimientos de días que cargaste vos');return}
+  const mv=d.movs[idx];if(!mv)return;
+  if(!confirm('¿Eliminar este movimiento?\n\n'+((mv.cpt||'(sin concepto)'))+' · '+pesoS(mv.imp)+(mv.ref?(' · '+mv.ref):'')+'\n\nEsta acción no se puede deshacer.'))return;
+  d.movs.splice(idx,1);
+  d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.nmov=d.movs.length;
+  d.sf=Math.round((d.si+d.ing+d.egr)*100)/100;
+  d.dif=d.fis!=null?Math.round((d.sf-d.fis)*100)/100:null;
+  cascadeChain(activeContextId,CUR,userDays);
+  saveUser();closeModal();renderAll();toast('Movimiento eliminado');
+}
 function closeEditor(){document.getElementById('edOverlay').classList.remove('on');if(!document.getElementById('overlay').classList.contains('on'))document.body.style.overflow=''}
 document.getElementById('edOverlay').onclick=e=>{if(e.target.id==='edOverlay')closeEditor()};
 document.getElementById('newDayBtn').onclick=()=>openEditor(null);

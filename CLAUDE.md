@@ -39,6 +39,7 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
 - **Editor de día** (`openEditor`/`saveDay`): "＋ Nuevo día". Incluye una sección **"⇄ Préstamo entre empresas"**:
   al guardar, `registerLoan()` agrega el egreso a ese día y el ingreso a la caja destino. El resumen refleja los préstamos pendientes en vivo. **Sin doble contabilidad.**
+- **Acciones por fila** (`.rowact` ✎/🗑): en "Movimientos diarios" (días) y "Buscar movimientos" (asientos), cada fila `src:'user'` muestra editar (`editDay`) y eliminar (`deleteDay` para días, `deleteMov(iso,idx)` para un movimiento — recalcula ing/egr/sf/nmov/dif y `cascadeChain`). Los días/movimientos del histórico importado (`src:'base'`) **no** muestran iconos (read-only). Los botones usan `event.stopPropagation()` para no disparar el modal de detalle de la fila.
 - **⬇ Excel** (`downloadExcel`): genera un `.xlsx` real multi-hoja **sin librerías** (ZIP+OOXML a mano: `zipStore`/`buildXlsx`). Hojas: Resumen diario, Movimientos, Préstamos — todas las empresas + histórico.
 - **⤓ Respaldo** (`backupBtn` + `importFile`): exporta/importa el respaldo `.json` (re-importable). Formato = `fullBackupPayload()` = `{exportedAt, contexts, data:{ctxId:{ARS,USD}}, loans}`.
 - **✉ Backup diario** (`openBackupSettings`): panel/modal con guía in-app. Envía el respaldo diario por email al abrir la app (1×/día). Métodos:
