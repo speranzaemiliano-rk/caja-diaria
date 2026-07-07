@@ -1571,8 +1571,18 @@ function startSync(){
 /* Interceptar guardados locales para empujar a la nube (no invasivo) */
 (function(){const _si=localStorage.setItem.bind(localStorage);localStorage.setItem=function(k,v){_si(k,v);try{if(!_applyingRemote&&_syncReady&&/^caja_(contexts_v1|user_days_v2|loans_v1)/.test(k))schedulePush()}catch(e){}}})();
 function parseFirebaseCfg(text){
-  const m=(text||'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Pegá el objeto de configuración { ... } de Firebase');
-  const obj=Function('return ('+m[0]+')')();
+  text=text||'';
+  // Preferir anclar en "firebaseConfig = { ... }" para no confundirse con las llaves
+  // del "import { initializeApp } from ..." si se pegó el snippet completo de Firebase.
+  let objText=null;
+  const anchored=text.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;/);
+  if(anchored)objText=anchored[1];
+  if(!objText){
+    const candidates=[...text.matchAll(/\{[\s\S]*?\}/g)].map(x=>x[0]);
+    objText=candidates.find(s=>/apiKey/.test(s))||null;
+  }
+  if(!objText)throw new Error('Pegá el objeto de configuración { ... } de Firebase (el que tiene apiKey, projectId, etc.)');
+  let obj;try{obj=Function('return ('+objText+')')()}catch(e){throw new Error('No pude leer la configuración pegada — probá pegar solo el bloque "firebaseConfig = { ... }"')}
   if(!obj||!obj.apiKey||!obj.projectId)throw new Error('A la configuración le falta apiKey o projectId');
   return obj;
 }
