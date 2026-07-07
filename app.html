@@ -325,6 +325,11 @@ tbody tr:hover{background:#f1f3f4}
 .rowact{background:none;border:1px solid var(--line);border-radius:8px;width:30px;height:30px;color:var(--ink2);cursor:pointer;font-size:13px;transition:.15s;margin-left:5px;vertical-align:middle}
 .rowact:hover{border-color:#1a73e8;color:#1a73e8;background:#e8f0fe}
 .rowact.del:hover{border-color:var(--red);color:var(--red);background:var(--red-bg)}
+.btn.on{background:var(--blue-soft,#e8f0fe);color:var(--blue,#1a73e8);border-color:var(--blue,#1a73e8)}
+.selbar{display:flex;align-items:center;gap:16px;background:var(--blue-soft,#e8f0fe);border:1px solid var(--blue,#1a73e8);border-radius:11px;padding:11px 16px;margin-bottom:14px;font-size:13.5px}
+.selbar b{font-family:'Roboto Mono',monospace;font-size:15px}
+.selbar .clr{margin-left:auto;background:none;border:none;color:var(--blue,#1a73e8);font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline}
+.selchk{width:34px;text-align:center!important}
 </style>
 </head>
 <body>
@@ -390,11 +395,13 @@ tbody tr:hover{background:#f1f3f4}
           <div class="ph">
             <div><h3 id="dayPanelTitle">Movimientos del día</h3><p id="dayPanelSub">—</p></div>
             <div style="display:flex;gap:10px">
+              <button class="btn" id="daySelBtn" style="display:none">☑ Seleccionar</button>
               <button class="btn" id="dayAddBtn" style="display:none">＋ Agregar movimiento</button>
               <button class="btn" id="dayEditBtn" style="display:none">✎ Editar día</button>
             </div>
           </div>
           <div id="dayQuickAdd" style="display:none"></div>
+          <div id="daySelBar" style="display:none"></div>
           <div id="dayMovs"></div>
         </div>
       </section>
@@ -472,8 +479,10 @@ tbody tr:hover{background:#f1f3f4}
             <option value="out">Solo egresos</option>
           </select>
           <select class="sel" id="movYear"></select>
+          <button class="btn" id="movSelBtn">☑ Seleccionar</button>
           <button class="btn" id="expMov">⬇ Exportar CSV</button>
         </div>
+        <div id="movSelBar" style="display:none"></div>
         <div class="panel" style="padding:0;overflow:hidden">
           <div style="overflow:auto;max-height:70vh"><table id="movTable"></table></div>
         </div>
@@ -731,25 +740,40 @@ function renderKpis(){
     <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div></div>
     <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div></div>`;
 }
+let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
+function toggleDaySelMode(){dayMovsSelecting=!dayMovsSelecting;daySelSet=new Set();renderDayMovs()}
+function toggleDaySelItem(idx,checked){if(checked)daySelSet.add(idx);else daySelSet.delete(idx);updateDaySelBar()}
+function updateDaySelBar(){
+  const bar=document.getElementById('daySelBar');if(!bar)return;
+  if(!dayMovsSelecting||!last||!last.movs.length||!daySelSet.size){bar.style.display='none';bar.innerHTML='';return}
+  const movs=last.movs;let sum=0;daySelSet.forEach(i=>{if(movs[i])sum+=movs[i].imp});
+  bar.className='selbar';bar.style.display='flex';
+  bar.innerHTML=`<span>${daySelSet.size} seleccionado(s)</span><span>Suma neta: <b class="${sum>=0?'pos':'neg'}">${pesoS(sum)}</b></span><button type="button" class="clr" id="daySelClear">Limpiar selección</button>`;
+  const cb=document.getElementById('daySelClear');if(cb)cb.onclick=()=>{daySelSet=new Set();renderDayMovs()};
+}
 function renderDayMovs(){
   const d=last;
-  const t=document.getElementById('dayPanelTitle'),s=document.getElementById('dayPanelSub'),el=document.getElementById('dayMovs'),eb=document.getElementById('dayEditBtn'),ab=document.getElementById('dayAddBtn'),qa=document.getElementById('dayQuickAdd');
+  const t=document.getElementById('dayPanelTitle'),s=document.getElementById('dayPanelSub'),el=document.getElementById('dayMovs'),eb=document.getElementById('dayEditBtn'),ab=document.getElementById('dayAddBtn'),qa=document.getElementById('dayQuickAdd'),sb=document.getElementById('daySelBtn');
   if(!t||!s||!el)return;
   if(qa){qa.style.display='none';qa.innerHTML=''}
-  if(!d){t.textContent='Movimientos del día';s.textContent='Sin días registrados';el.innerHTML='<div class="empty-state"><div class="big">🧾</div>Todavía no cargaste ningún día en esta caja</div>';if(eb)eb.style.display='none';if(ab)ab.style.display='none';return}
+  if(d&&d.iso!==_daySelIso){_daySelIso=d.iso;dayMovsSelecting=false;daySelSet=new Set()}
+  if(!d){t.textContent='Movimientos del día';s.textContent='Sin días registrados';el.innerHTML='<div class="empty-state"><div class="big">🧾</div>Todavía no cargaste ningún día en esta caja</div>';if(eb)eb.style.display='none';if(ab)ab.style.display='none';if(sb)sb.style.display='none';updateDaySelBar();return}
   t.textContent='Movimientos del día';
   s.textContent=d.date+' · '+d.wd+' · '+(d.nmov||0)+' movimiento(s)';
   const canEdit=d.src==='user';
   if(eb){if(canEdit){eb.style.display='';eb.onclick=()=>editDay(d.iso)}else{eb.style.display='none'}}
   if(ab){if(canEdit){ab.style.display='';ab.onclick=()=>openQuickAdd(d.iso)}else{ab.style.display='none'}}
-  if(!d.movs.length){el.innerHTML='<div class="empty-state">Este día no tuvo movimientos. El saldo final arrastra el inicial.</div>';return}
+  if(sb){if(d.movs.length){sb.style.display='';sb.className='btn'+(dayMovsSelecting?' on':'');sb.textContent=dayMovsSelecting?'✕ Cancelar selección':'☑ Seleccionar';sb.onclick=toggleDaySelMode}else{sb.style.display='none'}}
+  if(!d.movs.length){el.innerHTML='<div class="empty-state">Este día no tuvo movimientos. El saldo final arrastra el inicial.</div>';updateDaySelBar();return}
+  const sel=dayMovsSelecting;
   const neto=(d.ing||0)+(d.egr||0);
-  const rows=d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(m.ref)||'—'}</td></tr>`).join('');
+  const rows=d.movs.map((m,i)=>`<tr style="cursor:default">${sel?`<td class="selchk"><input type="checkbox" ${daySelSet.has(i)?'checked':''} onchange="toggleDaySelItem(${i},this.checked)"></td>`:''}<td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(m.ref)||'—'}</td></tr>`).join('');
   el.innerHTML=`<div class="mvs" style="margin:0"><table>
-    <thead><tr><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead>
+    <thead><tr>${sel?'<th class="selchk"></th>':''}<th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr style="cursor:default"><td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>
+    <tfoot><tr style="cursor:default">${sel?'<td style="border-top:2px solid var(--line2)"></td>':''}<td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>
   </table></div>`;
+  updateDaySelBar();
 }
 
 /* ============ ＋ Agregar movimiento (alta rápida, sin abrir el editor completo) ============ */
@@ -980,20 +1004,39 @@ function drawWeekday(){
 }
 
 /* ============ SEARCH MOVEMENTS ============ */
+let movSelecting=false,movSel=new Set();
+function toggleMovSelMode(){movSelecting=!movSelecting;movSel=new Set();renderMovs()}
+function toggleMovSelItem(k,checked){if(checked)movSel.add(k);else movSel.delete(k);updateMovSelBar()}
+function updateMovSelBar(){
+  const bar=document.getElementById('movSelBar');if(!bar)return;
+  if(!movSelecting||!movSel.size){bar.style.display='none';bar.innerHTML='';return}
+  let sum=0;movSel.forEach(k=>{const v=_movByKey&&_movByKey[k];if(v)sum+=v.imp});
+  bar.className='selbar';bar.style.display='flex';
+  bar.innerHTML=`<span>${movSel.size} seleccionado(s)</span><span>Suma neta: <b class="${sum>=0?'pos':'neg'}">${pesoS(sum)}</b></span><button type="button" class="clr" id="movSelClear">Limpiar selección</button>`;
+  const cb=document.getElementById('movSelClear');if(cb)cb.onclick=()=>{movSel=new Set();renderMovs()};
+}
+let _movByKey={};
 function renderMovs(){
   const q=document.getElementById('movSearch').value.toLowerCase().trim();
   const ty=document.getElementById('movType').value;
   const yr=document.getElementById('movYear').value;
+  const sb=document.getElementById('movSelBtn');
+  if(sb){sb.className='btn'+(movSelecting?' on':'');sb.textContent=movSelecting?'✕ Cancelar selección':'☑ Seleccionar';sb.onclick=toggleMovSelMode}
   let rows=[];
   real.forEach(d=>{if(yr!=='all'&&String(d.y)!==yr)return;d.movs.forEach((m,mi)=>{
     if(ty==='in'&&m.imp<0)return;if(ty==='out'&&m.imp>=0)return;
     if(q){const hay=((m.cpt||'')+' '+(m.ref||'')+' '+Math.abs(m.imp)+' '+d.date).toLowerCase();if(!hay.includes(q))return}
     rows.push({d,m,mi});})});
   rows.sort((a,b)=>a.d.iso<b.d.iso?1:-1);
+  _movByKey={};rows.forEach(r=>{_movByKey[r.d.iso+'#'+r.mi]=r.m});
+  const validKeys=new Set(Object.keys(_movByKey));[...movSel].forEach(k=>{if(!validKeys.has(k))movSel.delete(k)});
   const tot=rows.reduce((s,r)=>s+r.m.imp,0);
   document.getElementById('movCount').innerHTML=`<span class="hl">${rows.length}</span> movimiento(s) · suma neta: <span class="${tot>=0?'pos':'neg'}" style="font-family:Roboto Mono">${pesoS(tot)}</span>`;
-  const body=rows.slice(0,600).map(r=>`<tr onclick='openDayIso("${r.d.iso}")'><td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td><td class="rowacts" onclick="event.stopPropagation()">${r.d.src==='user'?`<button class="rowact" title="Editar (abre el día)" onclick="editDay('${r.d.iso}')">✎</button><button class="rowact del" title="Eliminar movimiento" onclick="deleteMov('${r.d.iso}',${r.mi})">🗑</button>`:''}</td></tr>`).join('');
-  document.getElementById('movTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th><th class="l"></th></tr></thead><tbody>${body||'<tr><td colspan=5 class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>'}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=5 class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
+  const sel=movSelecting;
+  const body=rows.slice(0,600).map(r=>{const k=r.d.iso+'#'+r.mi;return `<tr onclick='openDayIso("${r.d.iso}")'>${sel?`<td class="selchk" onclick="event.stopPropagation()"><input type="checkbox" ${movSel.has(k)?'checked':''} onchange="toggleMovSelItem('${k}',this.checked)"></td>`:''}<td class="l"><span class="wdtag">${r.d.date}</span></td><td class="${r.m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(r.m.imp)}</td><td class="l">${esc(r.m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(r.m.ref)||'—'}</td><td class="rowacts" onclick="event.stopPropagation()">${r.d.src==='user'?`<button class="rowact" title="Editar (abre el día)" onclick="editDay('${r.d.iso}')">✎</button><button class="rowact del" title="Eliminar movimiento" onclick="deleteMov('${r.d.iso}',${r.mi})">🗑</button>`:''}</td></tr>`}).join('');
+  const ncols=sel?6:5;
+  document.getElementById('movTable').innerHTML=`<thead><tr>${sel?'<th class="selchk"></th>':''}<th class="l">Fecha</th><th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th><th class="l"></th></tr></thead><tbody>${body||`<tr><td colspan=${ncols} class=l style="text-align:center;color:var(--ink3);padding:30px">Sin resultados</td></tr>`}</tbody>`+(rows.length>600?`<tfoot><tr><td colspan=${ncols} class=l style="color:var(--ink3);text-align:center;padding:12px">Mostrando los primeros 600 de ${rows.length}. Refiná la búsqueda.</td></tr></tfoot>`:'');
+  updateMovSelBar();
 }
 ['movSearch','movType','movYear'].forEach(id=>document.getElementById(id).addEventListener('input',renderMovs));
 
