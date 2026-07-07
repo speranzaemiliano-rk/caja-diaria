@@ -8,7 +8,7 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | **La app** (home + app unificados): "Control de Caja Diario · Movimientos" (tema oscuro dorado). Al entrar al sitio ya estás en la caja. Todo el producto vive acá. |
+| `index.html` | **La app** (home + app unificados): "Control de Caja Diario · Movimientos" (tema oscuro dorado). Arriba tiene un **hero de bienvenida** (`#heroHome`, clases `.hh-*`, estilo claro del viejo landing: papel `#F4F5F3` + verde pino `#17714A`) con ✕ para ocultarlo (persistido en `caja_hero_hidden_v1`) y un botón "⌂ Presentación" en el sidebar (`#heroNavBtn`, `.nav-btn` SIN `data-v`; su onclick se asigna al final del script y pisa el handler genérico). Debajo, toda la caja. |
 | `app.html` | **Redirección** a la raíz (`location.replace('./')`). Queda por compatibilidad con marcadores/PWA viejos; ya no hay landing separada. |
 | `manifest.json` | PWA. `start_url: "./"` → la app instalada abre la caja. `scope: "./"`. Splash oscuro (`#0b0f14`). |
 | `sw.js` | Service worker (cache-first). Cachea `./`, `index.html`, `app.html`, manifest e íconos. **Al tocar HTML, subí `CACHE` (`caja-diaria-vN`)** para purgar la caché vieja. |
