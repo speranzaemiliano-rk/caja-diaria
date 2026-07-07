@@ -970,6 +970,7 @@ function openDay(d){
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Créditos a cobrar</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
+          ${d.fis!=null?`<div class="crow" style="border-top:1px solid var(--line);padding-top:8px"><span>Total contado (caja + créditos)</span><span style="font-weight:600">${peso(Math.round(((d.fis||0)+(d.cred||0))*100)/100)}</span></div>`:''}
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
       </div>${caja}${credDetail}
     </div>`;
@@ -1077,21 +1078,18 @@ function cascadeChain(ctxId,cur,ud){
       // el ajuste de ese día, para no perder lo ya cargado.
       const credAdj=d.credAdj!=null?d.credAdj:(d.cred!=null?d.cred:0);
       const newCredSi=prevCred,newCred=Math.round((prevCred+credAdj)*100)/100;
-      const siMismatch=prevSf!=null&&Math.round((d.si||0)*100)!==Math.round(prevSf*100);
-      const credMismatch=Math.round((d.credSi||0)*100)!==Math.round(newCredSi*100)||Math.round((d.cred||0)*100)!==Math.round(newCred*100);
-      if(siMismatch||credMismatch){
-        const rec={...d};
-        if(prevSf!=null)rec.si=prevSf;
-        rec.sf=Math.round((rec.si+(rec.ing||0)+(rec.egr||0))*100)/100;
-        rec.dif=rec.fis!=null?Math.round((rec.sf-rec.fis)*100)/100:rec.dif;
-        rec.credSi=newCredSi;rec.cred=newCred;rec.credAdj=credAdj;
+      const newSi=prevSf!=null?prevSf:d.si;
+      const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0))*100)/100;
+      // Diferencia de caja: los créditos a cobrar cuentan como efectivo para el
+      // arqueo (junto con lo contado físicamente), no son solo informativos.
+      const newDif=d.fis!=null?Math.round((newSf-((d.fis||0)+newCred))*100)/100:null;
+      const changed=Math.round((d.si||0)*100)!==Math.round(newSi*100)||Math.round((d.sf||0)*100)!==Math.round(newSf*100)||Math.round((d.credSi||0)*100)!==Math.round(newCredSi*100)||Math.round((d.cred||0)*100)!==Math.round(newCred*100)||d.dif!==newDif;
+      if(changed){
+        const rec={...d,si:newSi,sf:newSf,dif:newDif,credSi:newCredSi,cred:newCred,credAdj};
         const idx=ud.findIndex(x=>x.iso===d.iso);
         if(idx>=0)ud[idx]=rec;
-        prevSf=rec.sf;
-      }else{
-        prevSf=d.sf;
       }
-      prevCred=newCred;
+      prevSf=newSf;prevCred=newCred;
     }else{
       prevSf=d.sf;
       // el histórico importado nunca tuvo créditos: el saldo pasa sin cambios
@@ -1241,16 +1239,22 @@ let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function blankCredMov(){return{type:'in',amt:'',note:''}}
+function blankFisMov(){return{amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
-  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
+  let m={iso:nextDate(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
   if(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
     // como una fila editable ya cargada, en vez de perder ese valor.
     const credMovs=(existing.credMovs&&existing.credMovs.length)
       ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||''}))
       :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:''}]:[]);
-    m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
+    // Compat: días guardados con un solo total (fis, sin caja itemizada) se muestran
+    // como una parte editable ya cargada, en vez de perder ese valor.
+    const fisMovs=(existing.caja&&existing.caja.length)
+      ?existing.caja.map(v=>({amt:v}))
+      :(existing.fis!=null?[{amt:existing.fis}]:[]);
+    m={iso:existing.iso,si:existing.si,fisMovs,chq:existing.chq==null?'':existing.chq,
        credSi:existing.credSi||0,credMovs,
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
@@ -1277,9 +1281,14 @@ function openEditor(existing){
         <div><b>Flujo neto</b><span id="s_net">${symLabel} 0</span></div>
         <div><b>Saldo final</b><span style="color:var(--gold2)" id="s_sf">${symLabel} 0</span></div>
       </div>
-      <div class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:16px">
-        <div class="field"><label>Caja real / conteo físico (${symLabel}) — opcional</label><input class="amt" id="f_fis" value="${m.fis}" placeholder="dejar vacío si no aplica"></div>
+      <div class="fgrid" style="grid-template-columns:1fr;margin-top:16px">
         <div class="field"><label>Cheques / valores (${symLabel}) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
+      </div>
+      <div class="ed-sub" style="margin-top:20px">Caja real / conteo físico <div class="ln2"></div></div>
+      <div class="ctrlbox" style="margin-top:10px">
+        <div id="fisMvList"></div>
+        <button class="addrow" id="fisAddRow" type="button" style="margin-top:2px">＋ Agregar parte del conteo (opcional)</button>
+        <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Total contado</span><span class="mono" style="color:var(--gold2);font-weight:700" id="fisTotalDisplay">—</span></div>
       </div>
       <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
       <div class="ctrlbox" style="margin-top:10px">
@@ -1314,6 +1323,8 @@ function openEditor(existing){
   document.getElementById('saveDay').onclick=saveDay;
   renderCredMovRows();recalcCredit();
   document.getElementById('credAddRow').onclick=()=>{edState.credMovs.push(blankCredMov());renderCredMovRows();recalcCredit()};
+  renderFisMovRows();recalcFis();
+  document.getElementById('fisAddRow').onclick=()=>{edState.fisMovs.push(blankFisMov());renderFisMovRows();recalcFis()};
   renderEdLoanSelect();renderEdLoans();
   const elAdd=document.getElementById('ed_loanAdd');
   if(elAdd)elAdd.onclick=()=>{
@@ -1405,6 +1416,24 @@ function recalcCredit(){
   const newBal=Math.round((edState.credSi+sum)*100)/100;
   const el=document.getElementById('credNewDisplay');if(el)el.textContent=peso(newBal);
 }
+function renderFisMovRows(){
+  const list=document.getElementById('fisMvList');if(!list)return;
+  list.innerHTML=(edState.fisMovs||[]).map((fm,i)=>`
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:1fr 36px;margin-bottom:8px">
+      <input class="amt amount" inputmode="decimal" placeholder="0" value="${fm.amt}">
+      <button class="rmrow" type="button" title="Quitar">✕</button>
+    </div>`).join('');
+  list.querySelectorAll('.mvrow').forEach(row=>{
+    const i=+row.dataset.i;
+    row.querySelector('.amount').oninput=e=>{edState.fisMovs[i].amt=e.target.value;recalcFis()};
+    row.querySelector('.rmrow').onclick=()=>{edState.fisMovs.splice(i,1);renderFisMovRows();recalcFis()};
+  });
+}
+function recalcFis(){
+  const vals=(edState.fisMovs||[]).map(fm=>num(fm.amt)).filter(v=>v!=null);
+  const el=document.getElementById('fisTotalDisplay');if(!el)return;
+  el.textContent=vals.length?peso(Math.round(vals.reduce((s,v)=>s+v,0)*100)/100):'—';
+}
 function recalcEditor(){
   const c=computeEditor();
   const loanTot=(edState.loans||[]).reduce((s,l)=>s+(+l.amt||0),0);
@@ -1421,15 +1450,18 @@ function saveDay(){
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
-  const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value);
+  const cajaParts=(edState.fisMovs||[]).map(fm=>num(fm.amt)).filter(v=>v!=null&&v!==0);
+  const fis=cajaParts.length?Math.round(cajaParts.reduce((s,v)=>s+v,0)*100)/100:null;
+  const chq=num(document.getElementById('f_chq').value);
   const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
   const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
+  // dif queda provisorio (cascadeChain lo recalcula sumando créditos al conteo).
   // credSi/cred quedan provisorios acá; cascadeChain() los recalcula bien (saldo
   // acumulado de créditos) justo abajo, a partir de credAdj.
   const rec={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
-    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,credAdj,credMovs,credSi:0,cred:0,empty:false,caja:[],
+    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,credAdj,credMovs,credSi:0,cred:0,empty:false,caja:cajaParts,
     movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref}))};
   if(editIso){const idx=userDays.findIndex(d=>d.iso===editIso);if(idx>=0)userDays[idx]=rec;else userDays.push(rec)}
   else userDays.push(rec);
