@@ -8,9 +8,10 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | **La app** (home + app unificados): "Control de Caja Diario · Movimientos" (tema oscuro dorado). Arriba tiene un **hero de bienvenida** (`#heroHome`, clases `.hh-*`, estilo claro del viejo landing: papel `#F4F5F3` + verde pino `#17714A`) con ✕ para ocultarlo (persistido en `caja_hero_hidden_v1`) y un botón "⌂ Presentación" en el sidebar (`#heroNavBtn`, `.nav-btn` SIN `data-v`; su onclick se asigna al final del script y pisa el handler genérico). Debajo, toda la caja. |
-| `app.html` | **Redirección** a la raíz (`location.replace('./')`). Queda por compatibilidad con marcadores/PWA viejos; ya no hay landing separada. |
-| `manifest.json` | PWA. `start_url: "./"` → la app instalada abre la caja. `scope: "./"`. Splash oscuro (`#0b0f14`). |
+| `index.html` | **La portada** (landing, página aparte): estilo **Google-clean** (blanco, azul `#1a73e8`, Roboto), con preview de la caja y botón "Abrir mi caja" → `app.html`. Registra el SW. NO tiene la app embebida. |
+| `app.html` | **La caja** (la app): "Control de Caja Diario · Movimientos". Reestilizada a **Google-clean claro** (blanco/gris `#f8f9fa`, azul `#1a73e8`, verde `#188038`/rojo `#d93025`, Roboto + Roboto Mono). El reskin se hizo cambiando `:root` + un bloque de overrides al final del `<style>` (conservando toda la estructura/JS). El logo del sidebar (`a.brand`) vuelve a la portada. |
+| `manifest.json` | PWA. `start_url: "./"` → la app instalada abre la **portada**. `scope: "./"`. Splash blanco (`#ffffff`). |
+| `sw.js` | Service worker. Cachea `./`, `index.html`, `app.html`, manifest e íconos. **Al tocar HTML, subí `CACHE` (`caja-diaria-vN`)** para purgar la caché vieja. |
 | `sw.js` | Service worker (cache-first). Cachea `./`, `index.html`, `app.html`, manifest e íconos. **Al tocar HTML, subí `CACHE` (`caja-diaria-vN`)** para purgar la caché vieja. |
 | `icon-192.png` / `icon-512.png` | Íconos de la PWA. |
 | `.github/workflows/deploy-pages.yml` | Deploy automático a GitHub Pages en cada push a `main` (usa `configure-pages` con `enablement:true`). |
