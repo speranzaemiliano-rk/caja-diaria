@@ -319,6 +319,7 @@ tbody tr:last-child td{border-bottom:none}
     </ul>
   </div>
 </header>
+<script>try{if(localStorage.getItem('caja_hero_hidden_v1')==='1')document.getElementById('heroHome').style.display='none'}catch(e){}</script>
 <div class="app">
   <aside class="side" id="side">
     <div class="brand">
@@ -672,6 +673,7 @@ document.getElementById('ctxProyectoDel').onclick=()=>{
 const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales'],loans:['Préstamos','Transferencias entre empresas y proyectos']};
 let currentView='dash';
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
+  if(!b.dataset.v)return; // botones sin vista (ej: "⌂ Presentación") no navegan
   document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   currentView=b.dataset.v;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -1582,7 +1584,7 @@ function ensureDefaultSync(){
       _syncReady=false;if(_unsub){_unsub();_unsub=null}
     }
   }catch(e){}
-  if(localStorage.getItem(SYNC_AUTOINIT_KEY)==='1')return;
+  try{if(localStorage.getItem(SYNC_AUTOINIT_KEY)==='1')return}catch(e){return}
   try{
     localStorage.setItem(SYNC_AUTOINIT_KEY,'1');
     if(!syncCfg())localStorage.setItem(SYNC_CFG_KEY,JSON.stringify(DEFAULT_FIREBASE_CONFIG));
@@ -1730,7 +1732,7 @@ if(syncEnabled())setTimeout(()=>{startSync().catch(e=>toast('Sync: '+((e&&e.mess
     hero.style.display=hidden?'none':'';
     try{localStorage.setItem(HERO_KEY,hidden?'1':'0')}catch(e){}
   }
-  if(localStorage.getItem(HERO_KEY)==='1')hero.style.display='none';
+  try{if(localStorage.getItem(HERO_KEY)==='1')hero.style.display='none'}catch(e){}
   document.getElementById('heroClose').onclick=()=>{setHero(true);toast('Presentación oculta — la volvés a ver desde "⌂ Presentación" en el menú')};
   document.getElementById('heroGo').onclick=()=>{document.querySelector('.app').scrollIntoView({behavior:smooth})};
   // pisa el handler genérico de .nav-btn (este botón no cambia de vista)
