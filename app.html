@@ -581,6 +581,9 @@ function baseFor(){return (activeContextId==='default'&&CUR==='ARS')?BASE_SEED:[
 let days,real,last,first,totIng,totEgr,totMov,warnDays,monthsArr,years;
 function isWarn(d){return !d.empty&&d.dif!=null&&Math.abs(d.dif)>1000&&Math.abs(d.dif)<Math.abs(d.sf||0)*0.5}
 function recompute(){
+  // Normaliza el saldo encadenado de créditos a cobrar (y si/sf) por si hay días
+  // guardados antes de recalcular en cascada — no depende de haber editado algo.
+  cascadeChain(activeContextId,CUR,userDays);
   const map={};
   baseFor().forEach(d=>map[d.iso]=d);
   userDays.forEach(d=>map[d.iso]=d); // user day overrides base (incl. empty placeholders)
@@ -1064,17 +1067,33 @@ function cascadeChain(ctxId,cur,ud){
   const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
   const userIso=new Set(ud.map(d=>d.iso));
   const realSorted=Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
-  let prevSf=null;
+  let prevSf=null,prevCred=0;
   realSorted.forEach(d=>{
-    if(userIso.has(d.iso)&&prevSf!=null&&Math.round((d.si||0)*100)!==Math.round(prevSf*100)){
-      const rec={...d,si:prevSf};
-      rec.sf=Math.round((rec.si+(rec.ing||0)+(rec.egr||0))*100)/100;
-      rec.dif=rec.fis!=null?Math.round((rec.sf-rec.fis)*100)/100:rec.dif;
-      const idx=ud.findIndex(x=>x.iso===d.iso);
-      if(idx>=0)ud[idx]=rec;
-      prevSf=rec.sf;
+    if(userIso.has(d.iso)){
+      // Créditos a cobrar: saldo acumulado día a día (como la caja). credAdj es el
+      // ajuste +/- cargado ese día. Compat: días guardados antes de este cambio
+      // (sin credAdj, con un 'cred' suelto tipeado a mano) tratan ese valor como
+      // el ajuste de ese día, para no perder lo ya cargado.
+      const credAdj=d.credAdj!=null?d.credAdj:(d.cred!=null?d.cred:0);
+      const newCredSi=prevCred,newCred=Math.round((prevCred+credAdj)*100)/100;
+      const siMismatch=prevSf!=null&&Math.round((d.si||0)*100)!==Math.round(prevSf*100);
+      const credMismatch=Math.round((d.credSi||0)*100)!==Math.round(newCredSi*100)||Math.round((d.cred||0)*100)!==Math.round(newCred*100);
+      if(siMismatch||credMismatch){
+        const rec={...d};
+        if(prevSf!=null)rec.si=prevSf;
+        rec.sf=Math.round((rec.si+(rec.ing||0)+(rec.egr||0))*100)/100;
+        rec.dif=rec.fis!=null?Math.round((rec.sf-rec.fis)*100)/100:rec.dif;
+        rec.credSi=newCredSi;rec.cred=newCred;rec.credAdj=credAdj;
+        const idx=ud.findIndex(x=>x.iso===d.iso);
+        if(idx>=0)ud[idx]=rec;
+        prevSf=rec.sf;
+      }else{
+        prevSf=d.sf;
+      }
+      prevCred=newCred;
     }else{
       prevSf=d.sf;
+      // el histórico importado nunca tuvo créditos: el saldo pasa sin cambios
     }
   });
   return ud;
@@ -1222,9 +1241,10 @@ function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
-  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',cred:'',movs:[blankMov()]};
+  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',credSi:last?(last.cred||0):0,credAdj:0,movs:[blankMov()]};
   if(existing){
-    m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,cred:existing.cred==null?'':existing.cred,
+    m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
+       credSi:existing.credSi||0,credAdj:existing.credAdj!=null?existing.credAdj:(existing.cred||0),
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
   }
@@ -1250,10 +1270,21 @@ function openEditor(existing){
         <div><b>Flujo neto</b><span id="s_net">${symLabel} 0</span></div>
         <div><b>Saldo final</b><span style="color:var(--gold2)" id="s_sf">${symLabel} 0</span></div>
       </div>
-      <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr;margin-top:16px">
+      <div class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:16px">
         <div class="field"><label>Caja real / conteo físico (${symLabel}) — opcional</label><input class="amt" id="f_fis" value="${m.fis}" placeholder="dejar vacío si no aplica"></div>
         <div class="field"><label>Cheques / valores (${symLabel}) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
-        <div class="field"><label>Créditos a cobrar (${symLabel}) — opcional</label><input class="amt" id="f_cred" value="${m.cred}" placeholder="0"></div>
+      </div>
+      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
+      <div class="ctrlbox" style="margin-top:10px">
+        <div class="crow"><span>Saldo anterior</span><span class="mono">${peso(m.credSi)}</span></div>
+        <div class="fgrid" style="grid-template-columns:110px 1fr;align-items:end;gap:10px;margin:12px 0 0">
+          <div class="field"><label>Ajuste</label><div class="tgl" id="credTgl">
+            <button type="button" class="in ${m.credAdj>=0?'on':''}" data-t="in">＋</button>
+            <button type="button" class="out ${m.credAdj<0?'on':''}" data-t="out">−</button>
+          </div></div>
+          <div class="field"><label>Importe (${symLabel}) — nuevo crédito suma, cobro resta</label><input class="amt" id="f_credAmt" value="${Math.abs(m.credAdj)||''}" placeholder="0"></div>
+        </div>
+        <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Nuevo saldo de créditos</span><span class="mono" style="color:var(--gold2);font-weight:700" id="credNewDisplay">${peso(m.credSi+m.credAdj)}</span></div>
       </div>
       <div class="ed-sub" style="margin-top:20px">⇄ Préstamo entre empresas <div class="ln2"></div></div>
       <div id="edLoanBox" class="loanbox" style="background:var(--panel2,rgba(127,127,127,.05));border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px">
@@ -1279,6 +1310,8 @@ function openEditor(existing){
   document.getElementById('f_si').addEventListener('input',recalcEditor);
   document.getElementById('addRow').onclick=()=>{edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   document.getElementById('saveDay').onclick=saveDay;
+  document.querySelectorAll('#credTgl button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#credTgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
+  document.getElementById('f_credAmt').addEventListener('input',recalcCredit);
   renderEdLoanSelect();renderEdLoans();
   const elAdd=document.getElementById('ed_loanAdd');
   if(elAdd)elAdd.onclick=()=>{
@@ -1347,6 +1380,13 @@ function computeEditor(){
   const sf=Math.round((si+ing+egr)*100)/100;
   return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
 }
+function recalcCredit(){
+  const tglEl=document.querySelector('#credTgl button.on');
+  const sign=tglEl&&tglEl.dataset.t==='out'?-1:1;
+  const amt=num(document.getElementById('f_credAmt').value)||0;
+  const newBal=Math.round((edState.credSi+sign*amt)*100)/100;
+  document.getElementById('credNewDisplay').textContent=peso(newBal);
+}
 function recalcEditor(){
   const c=computeEditor();
   const loanTot=(edState.loans||[]).reduce((s,l)=>s+(+l.amt||0),0);
@@ -1363,11 +1403,17 @@ function saveDay(){
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
-  const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value),cred=num(document.getElementById('f_cred').value);
+  const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value);
+  const credTglEl=document.querySelector('#credTgl button.on');
+  const credSign=credTglEl&&credTglEl.dataset.t==='out'?-1:1;
+  const credAmt=num(document.getElementById('f_credAmt').value)||0;
+  const credAdj=Math.round(credSign*credAmt*100)/100;
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
+  // credSi/cred quedan provisorios acá; cascadeChain() los recalcula bien (saldo
+  // acumulado de créditos) justo abajo, a partir de credAdj.
   const rec={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
-    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,cred,empty:false,caja:[],
+    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,credAdj,credSi:0,cred:0,empty:false,caja:[],
     movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref}))};
   if(editIso){const idx=userDays.findIndex(d=>d.iso===editIso);if(idx>=0)userDays[idx]=rec;else userDays.push(rec)}
   else userDays.push(rec);
