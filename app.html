@@ -947,6 +947,7 @@ function openDay(d){
   const neto=(d.ing||0)+(d.egr||0);
   const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(m.ref)||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
   const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>'<span>'+peso(c)+'</span>').join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${peso(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
+  const credDetail=d.credMovs&&d.credMovs.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Detalle de créditos del día</h4>${d.credMovs.map(cm=>`<div class="crow"><span>${esc(cm.note)||'<span style="color:var(--ink3)">(sin nombre)</span>'}</span><span class="${cm.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(cm.imp)}</span></div>`).join('')}</div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">${d.d}</div>
@@ -970,7 +971,7 @@ function openDay(d){
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Créditos a cobrar</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
-      </div>${caja}
+      </div>${caja}${credDetail}
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
@@ -1239,7 +1240,7 @@ document.getElementById('loanSubmit').onclick=()=>{
 let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
-function blankCredMov(){return{type:'in',amt:''}}
+function blankCredMov(){return{type:'in',amt:'',note:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
   let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
@@ -1247,8 +1248,8 @@ function openEditor(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
     // como una fila editable ya cargada, en vez de perder ese valor.
     const credMovs=(existing.credMovs&&existing.credMovs.length)
-      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp)}))
-      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj)}]:[]);
+      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||''}))
+      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:''}]:[]);
     m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
        credSi:existing.credSi||0,credMovs,
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
@@ -1384,14 +1385,16 @@ function computeEditor(){
 function renderCredMovRows(){
   const list=document.getElementById('credMvList');if(!list)return;
   list.innerHTML=(edState.credMovs||[]).map((cm,i)=>`
-    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1fr 36px;margin-bottom:8px">
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr 36px;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
+      <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
       <button class="rmrow" type="button" title="Quitar">✕</button>
     </div>`).join('');
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
+    row.querySelector('.note').oninput=e=>{edState.credMovs[i].note=e.target.value};
     row.querySelector('.amount').oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
     row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
@@ -1419,7 +1422,7 @@ function saveDay(){
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
   const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value);
-  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100}}).filter(Boolean);
+  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
   const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
