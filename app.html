@@ -705,14 +705,9 @@ function renderAll(){
   renderAnalytics();drawWeekday();renderMovs();
 }
 function renderKpis(){
-  const neto=totIng+totEgr;
+  // El Resumen deja solo el saldo; ingresos/egresos/flujo/descuadres/movimientos viven en Análisis.
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi acc"><div class="lab">◆ Saldo de caja</div><div class="num mono">${last?peso(last.sf):peso(0)}</div><div class="meta">${last?('al '+last.date+' · '+last.wd):'sin movimientos aún'}</div></div>
-    <div class="kpi"><div class="lab pos">▲ Ingresos totales</div><div class="num mono pos">${peso(totIng)}</div><div class="meta">${real.length} días operados</div></div>
-    <div class="kpi"><div class="lab neg">▼ Egresos totales</div><div class="num mono neg">${pesoS(totEgr)}</div><div class="meta">salidas acumuladas</div></div>
-    <div class="kpi"><div class="lab">≈ Flujo neto</div><div class="num mono ${neto>=0?'pos':'neg'}">${pesoS(neto)}</div><div class="meta">ingresos − egresos</div></div>
-    <div class="kpi"><div class="lab">⚖ Descuadres detectados</div><div class="num mono">${warnDays.length}</div><div class="meta">días con diferencia &gt; $1.000</div></div>
-    <div class="kpi"><div class="lab">↹ Movimientos</div><div class="num mono">${fmtAR.format(totMov)}</div><div class="meta">asientos registrados</div></div>`;
+    <div class="kpi acc" style="max-width:440px"><div class="lab">◆ Saldo de caja</div><div class="num mono">${last?peso(last.sf):peso(0)}</div><div class="meta">${last?('al '+last.date+' · '+last.wd):'sin movimientos aún'}</div></div>`;
 }
 
 /* ============ LINE CHART ============ */
@@ -873,6 +868,11 @@ function renderAnalytics(){
   const avgDay=totMov/(real.length||1);
   const bigDay=real.length?real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0]:null;
   document.getElementById('anaKpis').innerHTML=`
+    <div class="kpi"><div class="lab pos">▲ Ingresos totales</div><div class="num mono pos">${peso(totIng)}</div><div class="meta">${real.length} días operados</div></div>
+    <div class="kpi"><div class="lab neg">▼ Egresos totales</div><div class="num mono neg">${pesoS(totEgr)}</div><div class="meta">salidas acumuladas</div></div>
+    <div class="kpi"><div class="lab">≈ Flujo neto</div><div class="num mono ${(totIng+totEgr)>=0?'pos':'neg'}">${pesoS(totIng+totEgr)}</div><div class="meta">ingresos − egresos</div></div>
+    <div class="kpi"><div class="lab">⚖ Descuadres detectados</div><div class="num mono">${warnDays.length}</div><div class="meta">días con diferencia &gt; $1.000</div></div>
+    <div class="kpi"><div class="lab">↹ Movimientos</div><div class="num mono">${fmtAR.format(totMov)}</div><div class="meta">asientos registrados</div></div>
     <div class="kpi"><div class="lab">Promedio mov./día</div><div class="num mono">${avgDay.toFixed(1)}</div><div class="meta">sobre ${real.length} días</div></div>
     <div class="kpi"><div class="lab">Meses operados</div><div class="num mono">${monthsArr.length}</div><div class="meta">${first?(first.date.slice(3)+' → '+last.date.slice(3)):'—'}</div></div>
     <div class="kpi acc"><div class="lab">Mejor flujo neto diario</div><div class="num mono pos">${bigDay?pesoS((bigDay.ing||0)+(bigDay.egr||0)):'—'}</div><div class="meta">${bigDay?bigDay.date:'—'}</div></div>
@@ -880,7 +880,7 @@ function renderAnalytics(){
   const cm={};
   real.forEach(d=>d.movs.forEach(m=>{const c=(m.cpt||'(sin concepto)').trim()||'(sin concepto)';(cm[c]=cm[c]||{n:0,abs:0,net:0}).n++;cm[c].abs+=Math.abs(m.imp);cm[c].net+=m.imp}));
   const tops=Object.entries(cm).sort((a,b)=>b[1].abs-a[1].abs).slice(0,12);const mx=tops.length?tops[0][1].abs:1;
-  document.getElementById('topConcepts').innerHTML=tops.length?'<div class="bars">'+tops.map(([c,v])=>`<div class="bar-row"><div class="nm" title="${esc(c)}">${esc(c)}</div><div class="bar-track"><div class="bar-fill" style="width:${v.abs/mx*100}%;background:linear-gradient(90deg,#8a6018,var(--gold2))"></div></div><div class="val ${v.net<0?'neg':'pos'}">${pesoS(v.net)}</div></div>`).join('')+'</div><p class="note">Suma neta por concepto. El ancho refleja el volumen absoluto movido.</p>':'<div class="empty-state">Sin conceptos cargados</div>';
+  document.getElementById('topConcepts').innerHTML=tops.length?'<div class="bars">'+tops.map(([c,v])=>`<div class="bar-row"><div class="nm" title="${esc(c)}">${esc(c)}</div><div class="bar-track"><div class="bar-fill" style="width:${v.abs/mx*100}%;background:linear-gradient(90deg,#8ab4f8,var(--blue))"></div></div><div class="val ${v.net<0?'neg':'pos'}">${pesoS(v.net)}</div></div>`).join('')+'</div><p class="note">Suma neta por concepto. El ancho refleja el volumen absoluto movido.</p>':'<div class="empty-state">Sin conceptos cargados</div>';
   let tbl='<thead><tr><th class="l">Mes</th><th>Días</th><th>Mov.</th><th>Ingresos</th><th>Egresos</th><th>Flujo neto</th><th>Saldo cierre</th></tr></thead><tbody>';
   monthsArr.slice().reverse().forEach(m=>{const net=m.ing+m.egr;tbl+=`<tr style="cursor:default"><td class="l" style="font-family:Archivo;font-weight:600">${m.label}</td><td>${m.days.length}</td><td>${m.nmov}</td><td class="pos">${peso(m.ing)}</td><td class="neg">${pesoS(m.egr)}</td><td class="${net>=0?'pos':'neg'}">${pesoS(net)}</td><td style="color:var(--gold2);font-weight:600">${peso(m.sf)}</td></tr>`});
   document.getElementById('monthTable').innerHTML=tbl+'</tbody>';
