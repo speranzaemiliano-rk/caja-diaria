@@ -1518,6 +1518,22 @@ document.getElementById('excelBtn').onclick=downloadExcel;
 
 /* ============ Sincronización en la nube (Firebase, opcional) ============ */
 const SYNC_CFG_KEY='caja_sync_cfg_v1',SYNC_CODE_KEY='caja_sync_code_v1',SYNC_ENABLED_KEY='caja_sync_enabled_v1',DEVICE_ID_KEY='caja_device_id_v1';
+/* Config fija embebida: la app sincroniza sola en cualquier navegador/dispositivo,
+   sin pedir configuración manual. El firebaseConfig no es secreto (está pensado
+   para ir en el cliente); el "código de caja" queda fijo acá adentro para que
+   todos los navegadores compartan automáticamente la misma caja. */
+const DEFAULT_FIREBASE_CONFIG={apiKey:"AIzaSyBznKJ6ApAum89CZ4kuBSnk7AynjQk-hI0",authDomain:"rk-cajadiaria-5-6.firebaseapp.com",projectId:"rk-cajadiaria-5-6",storageBucket:"rk-cajadiaria-5-6.firebasestorage.app",messagingSenderId:"307357693657",appId:"1:307357693657:web:75179c8df7e1139972b0c8"};
+const DEFAULT_SYNC_CODE='rk-cajadiaria-principal-5f8k2q';
+const SYNC_AUTOINIT_KEY='caja_sync_autoinit_v1';
+function ensureDefaultSync(){
+  if(localStorage.getItem(SYNC_AUTOINIT_KEY)==='1')return;
+  try{
+    localStorage.setItem(SYNC_AUTOINIT_KEY,'1');
+    if(!syncCfg())localStorage.setItem(SYNC_CFG_KEY,JSON.stringify(DEFAULT_FIREBASE_CONFIG));
+    if(!syncCode())localStorage.setItem(SYNC_CODE_KEY,DEFAULT_SYNC_CODE);
+    if(localStorage.getItem(SYNC_ENABLED_KEY)==null)localStorage.setItem(SYNC_ENABLED_KEY,'1');
+  }catch(e){}
+}
 function syncCfg(){try{return JSON.parse(localStorage.getItem(SYNC_CFG_KEY)||'null')}catch(e){return null}}
 function syncCode(){return (localStorage.getItem(SYNC_CODE_KEY)||'').trim()}
 function syncOn(){return localStorage.getItem(SYNC_ENABLED_KEY)==='1'}
@@ -1591,14 +1607,15 @@ function openSyncSettings(){
   const cfg=syncCfg();const code=syncCode();const on=syncEnabled();
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">☁</div>
-      <div><h3>Sincronizar entre dispositivos</h3><div class="msub">Guarda la caja en la nube (tu Firebase, gratis) para verla igual en la compu, el celu y cualquier navegador — se actualiza al instante en todos.</div></div>
+      <div><h3>Sincronizar entre dispositivos</h3><div class="msub">Esta caja sincroniza sola: cualquier navegador que abra este sitio ve los mismos datos, en vivo, sin configurar nada.</div></div>
       <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
     <div class="mbody2">
       <div style="padding:10px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;color:${on?'var(--green)':'var(--ink3)'}">
         Estado: <b>${on?'Sincronización activada':'No configurada'}</b>${on?(' · código <b>'+esc(code)+'</b>'):''}
       </div>
-      <details style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px" ${on?'':'open'}>
-        <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">¿Cómo configurarlo? (una vez, gratis, ~5 min)</summary>
+      ${on?'<p style="font-size:13px;color:var(--ink3);margin:-6px 0 14px">Ojo: como el código de sincronización queda fijo en la app, cualquiera que entre a este sitio comparte esta misma caja. Si preferís separar tus datos, usá un código propio abajo.</p>':''}
+      <details style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">Usar un código propio / conectar a otra caja (opcional)</summary>
         <ol style="margin:12px 0 0 18px;font-size:13.5px;line-height:1.7;color:var(--ink2)">
           <li>Entrá a <b>console.firebase.google.com</b> → <b>Agregar proyecto</b> (gratis, sin tarjeta).</li>
           <li>Adentro: ⚙ <b>Configuración del proyecto</b> → “Tus apps” → ícono <b>Web &lt;/&gt;</b> → registrá una app → copiá el objeto <b>firebaseConfig</b>.</li>
@@ -1645,6 +1662,7 @@ renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
 setTimeout(maybeAutoBackup,1500);
+ensureDefaultSync();
 if(syncEnabled())setTimeout(()=>{startSync().catch(e=>toast('Sync: '+((e&&e.message)||e)))},300);
 </script>
 </body>
