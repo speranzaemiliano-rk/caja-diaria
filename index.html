@@ -1523,9 +1523,19 @@ const SYNC_CFG_KEY='caja_sync_cfg_v1',SYNC_CODE_KEY='caja_sync_code_v1',SYNC_ENA
    para ir en el cliente); el "código de caja" queda fijo acá adentro para que
    todos los navegadores compartan automáticamente la misma caja. */
 const DEFAULT_FIREBASE_CONFIG={apiKey:"AIzaSyBznKJ6ApAum89CZ4kuBSnk7AynjQk-hI0",authDomain:"rk-cajadiaria-5-6.firebaseapp.com",projectId:"rk-cajadiaria-5-6",storageBucket:"rk-cajadiaria-5-6.firebasestorage.app",messagingSenderId:"307357693657",appId:"1:307357693657:web:75179c8df7e1139972b0c8"};
-const DEFAULT_SYNC_CODE='rk-cajadiaria-principal-5f8k2q';
+const DEFAULT_SYNC_CODE='Ugarte2079*';
+const PREV_DEFAULT_SYNC_CODE='rk-cajadiaria-principal-5f8k2q';
 const SYNC_AUTOINIT_KEY='caja_sync_autoinit_v1';
 function ensureDefaultSync(){
+  // Migración: si un navegador ya se había auto-conectado con el código default
+  // anterior (antes de fijar el código real), lo corrige para que coincida con
+  // la caja real y deje de sincronizar contra un documento distinto/vacío.
+  try{
+    if(localStorage.getItem(SYNC_CODE_KEY)===PREV_DEFAULT_SYNC_CODE && DEFAULT_SYNC_CODE!==PREV_DEFAULT_SYNC_CODE){
+      localStorage.setItem(SYNC_CODE_KEY,DEFAULT_SYNC_CODE);
+      _syncReady=false;if(_unsub){_unsub();_unsub=null}
+    }
+  }catch(e){}
   if(localStorage.getItem(SYNC_AUTOINIT_KEY)==='1')return;
   try{
     localStorage.setItem(SYNC_AUTOINIT_KEY,'1');
