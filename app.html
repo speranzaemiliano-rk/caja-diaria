@@ -1239,12 +1239,18 @@ document.getElementById('loanSubmit').onclick=()=>{
 let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
+function blankCredMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
-  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',credSi:last?(last.cred||0):0,credAdj:0,movs:[blankMov()]};
+  let m={iso:nextDate(),si:last?last.sf:0,fis:'',chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
   if(existing){
+    // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
+    // como una fila editable ya cargada, en vez de perder ese valor.
+    const credMovs=(existing.credMovs&&existing.credMovs.length)
+      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp)}))
+      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj)}]:[]);
     m={iso:existing.iso,si:existing.si,fis:existing.fis==null?'':existing.fis,chq:existing.chq==null?'':existing.chq,
-       credSi:existing.credSi||0,credAdj:existing.credAdj!=null?existing.credAdj:(existing.cred||0),
+       credSi:existing.credSi||0,credMovs,
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
   }
@@ -1277,14 +1283,9 @@ function openEditor(existing){
       <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
       <div class="ctrlbox" style="margin-top:10px">
         <div class="crow"><span>Saldo anterior</span><span class="mono">${peso(m.credSi)}</span></div>
-        <div class="fgrid" style="grid-template-columns:110px 1fr;align-items:end;gap:10px;margin:12px 0 0">
-          <div class="field"><label>Ajuste</label><div class="tgl" id="credTgl">
-            <button type="button" class="in ${m.credAdj>=0?'on':''}" data-t="in">＋</button>
-            <button type="button" class="out ${m.credAdj<0?'on':''}" data-t="out">−</button>
-          </div></div>
-          <div class="field"><label>Importe (${symLabel}) — nuevo crédito suma, cobro resta</label><input class="amt" id="f_credAmt" value="${Math.abs(m.credAdj)||''}" placeholder="0"></div>
-        </div>
-        <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Nuevo saldo de créditos</span><span class="mono" style="color:var(--gold2);font-weight:700" id="credNewDisplay">${peso(m.credSi+m.credAdj)}</span></div>
+        <div id="credMvList" style="margin-top:10px"></div>
+        <button class="addrow" id="credAddRow" type="button" style="margin-top:2px">＋ Agregar ajuste de crédito (opcional)</button>
+        <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Nuevo saldo de créditos</span><span class="mono" style="color:var(--gold2);font-weight:700" id="credNewDisplay">${peso(m.credSi)}</span></div>
       </div>
       <div class="ed-sub" style="margin-top:20px">⇄ Préstamo entre empresas <div class="ln2"></div></div>
       <div id="edLoanBox" class="loanbox" style="background:var(--panel2,rgba(127,127,127,.05));border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px">
@@ -1310,8 +1311,8 @@ function openEditor(existing){
   document.getElementById('f_si').addEventListener('input',recalcEditor);
   document.getElementById('addRow').onclick=()=>{edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   document.getElementById('saveDay').onclick=saveDay;
-  document.querySelectorAll('#credTgl button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#credTgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
-  document.getElementById('f_credAmt').addEventListener('input',recalcCredit);
+  renderCredMovRows();recalcCredit();
+  document.getElementById('credAddRow').onclick=()=>{edState.credMovs.push(blankCredMov());renderCredMovRows();recalcCredit()};
   renderEdLoanSelect();renderEdLoans();
   const elAdd=document.getElementById('ed_loanAdd');
   if(elAdd)elAdd.onclick=()=>{
@@ -1380,12 +1381,26 @@ function computeEditor(){
   const sf=Math.round((si+ing+egr)*100)/100;
   return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
 }
+function renderCredMovRows(){
+  const list=document.getElementById('credMvList');if(!list)return;
+  list.innerHTML=(edState.credMovs||[]).map((cm,i)=>`
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1fr 36px;margin-bottom:8px">
+      <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
+      <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
+      <button class="rmrow" type="button" title="Quitar">✕</button>
+    </div>`).join('');
+  list.querySelectorAll('.mvrow').forEach(row=>{
+    const i=+row.dataset.i;
+    row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
+    row.querySelector('.amount').oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
+    row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
+  });
+}
 function recalcCredit(){
-  const tglEl=document.querySelector('#credTgl button.on');
-  const sign=tglEl&&tglEl.dataset.t==='out'?-1:1;
-  const amt=num(document.getElementById('f_credAmt').value)||0;
-  const newBal=Math.round((edState.credSi+sign*amt)*100)/100;
-  document.getElementById('credNewDisplay').textContent=peso(newBal);
+  let sum=0;
+  (edState.credMovs||[]).forEach(cm=>{const a=num(cm.amt);if(a==null)return;sum+=(cm.type==='out'?-1:1)*a});
+  const newBal=Math.round((edState.credSi+sum)*100)/100;
+  const el=document.getElementById('credNewDisplay');if(el)el.textContent=peso(newBal);
 }
 function recalcEditor(){
   const c=computeEditor();
@@ -1404,16 +1419,14 @@ function saveDay(){
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
   const fis=num(document.getElementById('f_fis').value),chq=num(document.getElementById('f_chq').value);
-  const credTglEl=document.querySelector('#credTgl button.on');
-  const credSign=credTglEl&&credTglEl.dataset.t==='out'?-1:1;
-  const credAmt=num(document.getElementById('f_credAmt').value)||0;
-  const credAdj=Math.round(credSign*credAmt*100)/100;
+  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100}}).filter(Boolean);
+  const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
   // credSi/cred quedan provisorios acá; cascadeChain() los recalcula bien (saldo
   // acumulado de créditos) justo abajo, a partir de credAdj.
   const rec={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
-    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,credAdj,credSi:0,cred:0,empty:false,caja:[],
+    si:c.si,sf:c.sf,ing:c.ing,egr:c.egr,nmov:c.movs.length,dif,fis,chq,credAdj,credMovs,credSi:0,cred:0,empty:false,caja:[],
     movs:c.movs.map(m=>({imp:m.imp,cpt:m.cpt,ref:m.ref}))};
   if(editIso){const idx=userDays.findIndex(d=>d.iso===editIso);if(idx>=0)userDays[idx]=rec;else userDays.push(rec)}
   else userDays.push(rec);
