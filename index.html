@@ -221,7 +221,7 @@ tbody tr:last-child td{border-bottom:none}
 .menu-toggle{display:none;background:var(--panel);border:1px solid var(--line);width:40px;height:40px;border-radius:10px;color:var(--ink);font-size:18px;cursor:pointer;place-items:center}
 
 /* actions */
-.actions{display:flex;gap:10px;align-items:center}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .btn-primary{background:linear-gradient(135deg,var(--gold),#a8771f);border:none;color:#1a1206;font-family:inherit;font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:11px;cursor:pointer;transition:.18s;display:inline-flex;align-items:center;gap:8px;box-shadow:0 6px 18px -6px rgba(212,166,74,.6)}
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 10px 24px -6px rgba(212,166,74,.7)}
 .btn-ghost{background:var(--panel);border:1px solid var(--line);color:var(--ink2);font-family:inherit;font-weight:600;font-size:13px;padding:11px 14px;border-radius:11px;cursor:pointer;transition:.18s}
@@ -271,9 +271,54 @@ tbody tr:last-child td{border-bottom:none}
   .mvrow .rmrow{grid-column:2}
   .ed-summary{grid-template-columns:1fr 1fr}
 }
+
+/* ---- bienvenida (el home, integrado arriba de la caja) ---- */
+.hh{position:relative;background:#F4F5F3;color:#16201B;border-bottom:1px solid #D2D9D3;padding:clamp(32px,5vw,56px) clamp(20px,5vw,48px) clamp(28px,4vw,46px)}
+.hh-wrap{max-width:1120px;margin-inline:auto;display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(24px,4vw,56px);align-items:center}
+.hh-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;letter-spacing:1.3px;text-transform:uppercase;color:#17714A;background:#E5F0EA;border:1px solid rgba(23,113,74,.25);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.hh-eyebrow i{width:7px;height:7px;border-radius:50%;background:#17714A}
+.hh-title{font-family:ui-serif,'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;font-weight:600;font-size:clamp(1.75rem,3.6vw,2.65rem);line-height:1.07;letter-spacing:-.4px;text-wrap:balance;margin:0 0 12px;color:#16201B}
+.hh-title em{font-style:italic;color:#17714A}
+.hh-lede{font-size:clamp(.97rem,1.4vw,1.07rem);color:#5C6862;max-width:46ch;margin:0 0 20px;line-height:1.55}
+.hh-cta{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.hh-btn{background:#17714A;color:#fff;border:none;font-family:inherit;font-weight:700;font-size:14px;padding:12px 20px;border-radius:11px;cursor:pointer;transition:.18s;box-shadow:0 8px 20px -12px rgba(23,113,74,.9)}
+.hh-btn:hover{background:#0E4D33;transform:translateY(-1px)}
+.hh-note{font-size:12.5px;color:#8A968F}
+.hh-feats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hh-feats li{background:#fff;border:1px solid #E3E7E3;border-radius:12px;padding:13px 15px;font-weight:600;font-size:13.5px;color:#16201B;box-shadow:0 1px 2px rgba(22,32,27,.05)}
+.hh-feats li b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:#E5F0EA;color:#17714A;font-size:12px;margin-right:7px;vertical-align:-5px}
+.hh-feats li span{display:block;font-weight:400;font-size:12.5px;color:#5C6862;margin-top:4px;line-height:1.45}
+.hh-close{position:absolute;top:12px;right:14px;background:none;border:1px solid #D2D9D3;color:#8A968F;width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:13px;line-height:1;transition:.15s;display:grid;place-items:center}
+.hh-close:hover{color:#C1453B;border-color:#C1453B;background:#F8E8E5}
+.hh :focus-visible{outline:2.5px solid #17714A;outline-offset:2px;border-radius:8px}
+@media(max-width:900px){
+  .hh-wrap{grid-template-columns:1fr;gap:22px}
+  .hh-feats{grid-template-columns:1fr 1fr}
+}
+@media(max-width:480px){.hh-feats{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
+<header class="hh" id="heroHome" aria-label="Presentación de Caja Diaria">
+  <button class="hh-close" id="heroClose" type="button" title="Ocultar la presentación" aria-label="Ocultar la presentación">✕</button>
+  <div class="hh-wrap">
+    <div>
+      <span class="hh-eyebrow"><i></i> Para kioscos, locales y freelancers</span>
+      <h1 class="hh-title">Cerrá la caja del día <em>sin planillas</em> ni cuentas a mano.</h1>
+      <p class="hh-lede">Registrá cada ingreso y egreso, mirá el saldo en vivo y hacé el arqueo en segundos. Tu caja está acá abajo, lista para usar.</p>
+      <div class="hh-cta">
+        <button class="hh-btn" id="heroGo" type="button">↓ Ir a mi caja</button>
+        <span class="hh-note">La misma caja en todos tus dispositivos, sincronizada en la nube.</span>
+      </div>
+    </div>
+    <ul class="hh-feats">
+      <li><b>＋</b> Cargá en un toque<span>Ingreso o egreso, concepto y monto. Listo.</span></li>
+      <li><b>▲</b> Saldo en vivo<span>El total se recalcula con cada movimiento.</span></li>
+      <li><b>✓</b> Arqueo sin errores<span>Las diferencias con el efectivo saltan solas.</span></li>
+      <li><b>☁</b> En todos lados<span>La misma caja en la compu, el celu y la web.</span></li>
+    </ul>
+  </div>
+</header>
 <div class="app">
   <aside class="side" id="side">
     <div class="brand">
@@ -304,6 +349,7 @@ tbody tr:last-child td{border-bottom:none}
     <button class="nav-btn" data-v="analytics"><span class="ic">◔</span> Análisis</button>
     <button class="nav-btn" data-v="search"><span class="ic">⌕</span> Buscar movimientos</button>
     <button class="nav-btn" data-v="loans"><span class="ic">⇄</span> Préstamos</button>
+    <button class="nav-btn" id="heroNavBtn" type="button"><span class="ic">⌂</span> Presentación</button>
     <div class="side-foot">
       <div id="footRange">—</div>
       <div id="savedCount" style="margin-top:6px;color:var(--gold2);font-weight:600"></div>
@@ -1674,6 +1720,26 @@ if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al rec
 setTimeout(maybeAutoBackup,1500);
 ensureDefaultSync();
 if(syncEnabled())setTimeout(()=>{startSync().catch(e=>toast('Sync: '+((e&&e.message)||e)))},300);
+
+/* ============ bienvenida (home integrado) ============ */
+(function(){
+  const HERO_KEY='caja_hero_hidden_v1';
+  const hero=document.getElementById('heroHome');
+  const smooth=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
+  function setHero(hidden){
+    hero.style.display=hidden?'none':'';
+    try{localStorage.setItem(HERO_KEY,hidden?'1':'0')}catch(e){}
+  }
+  if(localStorage.getItem(HERO_KEY)==='1')hero.style.display='none';
+  document.getElementById('heroClose').onclick=()=>{setHero(true);toast('Presentación oculta — la volvés a ver desde "⌂ Presentación" en el menú')};
+  document.getElementById('heroGo').onclick=()=>{document.querySelector('.app').scrollIntoView({behavior:smooth})};
+  // pisa el handler genérico de .nav-btn (este botón no cambia de vista)
+  document.getElementById('heroNavBtn').onclick=()=>{
+    setHero(false);
+    document.getElementById('side').classList.remove('show');
+    window.scrollTo({top:0,behavior:smooth});
+  };
+})();
 </script>
 </body>
 </html>
