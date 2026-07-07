@@ -1133,9 +1133,61 @@ function registerLoan(fromCtx,toCtx,cur,amount,note,iso){
   loans.push({id,iso,from:{id:fromCtx.id,empresa:fromCtx.empresa,proyecto:fromCtx.proyecto},to:{id:toCtx.id,empresa:toCtx.empresa,proyecto:toCtx.proyecto},cur,amount:Math.abs(amount),note:note||''});
   saveLoans();
 }
+// Quita los 2 movimientos que un préstamo generó (origen y destino), recalculando
+// ese día en cada caja. Se usa para poder editar o eliminar un préstamo sin dejar
+// movimientos huérfanos.
+function removeLoanMovements(loan){
+  [loan.from.id,loan.to.id].forEach(ctxId=>{
+    const ud=loadUserDaysFor(ctxId,loan.cur);
+    const d=ud.find(x=>(x.movs||[]).some(m=>m.ref==='PRESTAMO#'+loan.id));
+    if(!d)return;
+    d.movs=d.movs.filter(m=>m.ref!=='PRESTAMO#'+loan.id);
+    d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+    d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+    d.nmov=d.movs.length;
+    d.sf=Math.round((d.si+d.ing+d.egr)*100)/100;
+    cascadeChain(ctxId,loan.cur,ud);
+    saveUserDaysFor(ctxId,loan.cur,ud);
+    if(ctxId===activeContextId&&loan.cur===CUR)userDays=ud;
+  });
+}
 function deleteLoan(id){
-  if(!confirm('¿Eliminar este registro de préstamo del historial?\n\nOjo: esto NO revierte los movimientos de ingreso/egreso ya generados en las cajas — si te equivocaste, lo mejor es cargar un préstamo inverso para compensar.'))return;
-  loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();
+  const loan=loans.find(l=>l.id===id);if(!loan)return;
+  if(!confirm('¿Eliminar este préstamo?\n\nSe van a quitar los movimientos de ingreso/egreso que generó en ambas cajas ('+ctxLabel(loan.from)+' y '+ctxLabel(loan.to)+').\n\nEsta acción no se puede deshacer.'))return;
+  removeLoanMovements(loan);
+  loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();renderAll();toast('Préstamo eliminado');
+}
+let editingLoanId=null;
+function editLoan(id){
+  const loan=loans.find(l=>l.id===id);if(!loan)return;
+  editingLoanId=id;
+  renderLoanSelects();
+  document.getElementById('loanFrom').value=loan.from.id;
+  document.getElementById('loanTo').value=loan.to.id;
+  document.getElementById('loanCur').value=loan.cur;
+  document.getElementById('loanAmt').value=loan.amount;
+  document.getElementById('loanNote').value=loan.note||'';
+  document.getElementById('loanDate').value=loan.iso;
+  document.getElementById('loanErr').textContent='';
+  const btn=document.getElementById('loanSubmit');btn.textContent='✓ Guardar cambios';
+  let cancelBtn=document.getElementById('loanEditCancel');
+  if(!cancelBtn){
+    cancelBtn=document.createElement('button');
+    cancelBtn.id='loanEditCancel';cancelBtn.className='btn-ghost';
+    cancelBtn.style.cssText='margin-top:16px;margin-left:10px';
+    cancelBtn.textContent='Cancelar edición';
+    cancelBtn.onclick=cancelEditLoan;
+    btn.after(cancelBtn);
+  }
+  btn.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditLoan(){
+  editingLoanId=null;
+  document.getElementById('loanSubmit').textContent='⇄ Registrar préstamo';
+  const cancelBtn=document.getElementById('loanEditCancel');if(cancelBtn)cancelBtn.remove();
+  document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
+  document.getElementById('loanErr').textContent='';
+  renderLoanSelects();
 }
 function renderLoanSelects(){
   const empresas=[...new Set(contexts.map(c=>c.empresa))];
@@ -1210,7 +1262,7 @@ function renderLoanTable(){
       <td>${CUR_SYM[l.cur]} ${fmtAR.format(Math.round(l.amount))}</td>
       ${runningCell}
       <td class="l" style="color:var(--ink3)">${esc(l.note)||'—'}</td>
-      <td><button class="rmrow" style="height:30px" title="Eliminar registro (no revierte los movimientos ya generados)" onclick="deleteLoan('${l.id}')">✕</button></td>
+      <td class="rowacts"><button class="rowact" title="Editar préstamo" onclick="editLoan('${l.id}')">✎</button><button class="rowact del" title="Eliminar préstamo (revierte los movimientos generados)" onclick="deleteLoan('${l.id}')">🗑</button></td>
     </tr>`;
   }).join('');
   const emptyMsg=loanFilterPair?'Sin movimientos registrados entre este par':'Todavía no registraste préstamos';
@@ -1228,6 +1280,16 @@ document.getElementById('loanSubmit').onclick=()=>{
   if(amt==null||amt<=0){errEl.textContent='Ingresá un importe válido.';return}
   if(!iso){errEl.textContent='Elegí una fecha.';return}
   const fromCtx=contexts.find(c=>c.id===fromId),toCtx=contexts.find(c=>c.id===toId);
+  if(editingLoanId){
+    const oldLoan=loans.find(l=>l.id===editingLoanId);
+    if(oldLoan){removeLoanMovements(oldLoan);loans=loans.filter(l=>l.id!==editingLoanId)}
+    cancelEditLoan();
+    registerLoan(fromCtx,toCtx,cur,amt,note,iso);
+    document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
+    renderLoans();renderAll();
+    toast('Préstamo actualizado: '+ctxLabel(fromCtx)+' → '+ctxLabel(toCtx));
+    return;
+  }
   registerLoan(fromCtx,toCtx,cur,amt,note,iso);
   document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
   renderLoans();
