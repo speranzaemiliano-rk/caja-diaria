@@ -1147,17 +1147,16 @@ function registerLoan(fromCtx,toCtx,cur,amount,note,iso){
 // Genera un movimiento en la caja $ y otro en la caja US$ (mismo patrón que un
 // préstamo, pero entre las 2 monedas de un mismo contexto en vez de entre contextos).
 function registerExchange(ctx,type,usdAmount,arsAmount,note,iso){
-  const id='cx_'+Math.random().toString(36).slice(2,10);
   const label=type==='venta'?'Venta de divisa':'Compra de divisa';
   const noteTxt=note?(' — '+note):'';
   if(type==='venta'){
     // Vendo dólares: sale US$ de la caja US$, entra $ a la caja $.
-    applyLoanMovement(ctx.id,'USD',iso,-Math.abs(usdAmount),label+noteTxt,'CAMBIO#'+id);
-    applyLoanMovement(ctx.id,'ARS',iso,Math.abs(arsAmount),label+noteTxt,'CAMBIO#'+id);
+    applyLoanMovement(ctx.id,'USD',iso,-Math.abs(usdAmount),label+noteTxt,'Cambio');
+    applyLoanMovement(ctx.id,'ARS',iso,Math.abs(arsAmount),label+noteTxt,'Cambio');
   }else{
     // Compro dólares: sale $ de la caja $, entra US$ a la caja US$.
-    applyLoanMovement(ctx.id,'ARS',iso,-Math.abs(arsAmount),label+noteTxt,'CAMBIO#'+id);
-    applyLoanMovement(ctx.id,'USD',iso,Math.abs(usdAmount),label+noteTxt,'CAMBIO#'+id);
+    applyLoanMovement(ctx.id,'ARS',iso,-Math.abs(arsAmount),label+noteTxt,'Cambio');
+    applyLoanMovement(ctx.id,'USD',iso,Math.abs(usdAmount),label+noteTxt,'Cambio');
   }
 }
 // Quita los 2 movimientos que un préstamo generó (origen y destino), recalculando
