@@ -737,13 +737,22 @@ function renderKpis(){
   const d=last;
   if(!d){document.getElementById('kpis').innerHTML=`<div class="kpi acc" style="max-width:440px"><div class="lab">◆ Saldo de caja</div><div class="num mono">${peso(0)}</div><div class="meta">sin movimientos aún</div></div>`;return}
   const nin=d.movs.filter(m=>m.imp>0).length,nout=d.movs.filter(m=>m.imp<0).length;
+  // Los números grandes NO cambian (son los de siempre: si/ing/egr/sf, el saldo
+  // "de movimientos"). El desglose de abajo reparte ESE mismo número en sus 2
+  // partes: Efectivo = número grande menos el crédito, Crédito = el acumulado de
+  // créditos — así "Efectivo + Crédito" siempre cierra con el número grande.
   const credIn=(d.credMovs||[]).filter(cm=>cm.imp>0).reduce((s,cm)=>s+cm.imp,0);
   const credOut=(d.credMovs||[]).filter(cm=>cm.imp<0).reduce((s,cm)=>s-cm.imp,0);
+  const siCred=d.credSi||0,sfCred=d.cred||0;
+  const siCash=Math.round((d.si-siCred)*100)/100;
+  const ingCash=Math.round(((d.ing||0)-credIn)*100)/100;
+  const egrCash=Math.round(((d.egr||0)+credOut)*100)/100;
+  const sfCash=Math.round((d.sf-sfCred)*100)/100;
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo ${peso(d.si)} · Crédito ${peso(d.credSi||0)}</div></div>
-    <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">Efectivo ${peso(d.ing||0)} · Crédito ${peso(credIn)}</div></div>
-    <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">Efectivo ${pesoS(d.egr||0)} · Crédito ${pesoS(-credOut)}</div></div>
-    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(d.sf)} · Crédito ${peso(d.cred||0)}</div></div>`;
+    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo ${peso(siCash)} · Crédito ${peso(siCred)}</div></div>
+    <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">Efectivo ${peso(ingCash)} · Crédito ${peso(credIn)}</div></div>
+    <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">Efectivo ${pesoS(egrCash)} · Crédito ${pesoS(-credOut)}</div></div>
+    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(sfCash)} · Crédito ${peso(sfCred)}</div></div>`;
 }
 let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
 function toggleDaySelMode(){dayMovsSelecting=!dayMovsSelecting;daySelSet=new Set();renderDayMovs()}
