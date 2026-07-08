@@ -738,10 +738,10 @@ function renderKpis(){
   if(!d){document.getElementById('kpis').innerHTML=`<div class="kpi acc" style="max-width:440px"><div class="lab">◆ Saldo de caja</div><div class="num mono">${peso(0)}</div><div class="meta">sin movimientos aún</div></div>`;return}
   const nin=d.movs.filter(m=>m.imp>0).length,nout=d.movs.filter(m=>m.imp<0).length;
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div></div>
+    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo ${peso(d.si)} · Crédito ${peso(d.credSi||0)}</div></div>
     <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div></div>
     <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div></div>
-    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div></div>`;
+    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(d.sf)} · Crédito ${peso(d.cred||0)}</div></div>`;
 }
 let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
 function toggleDaySelMode(){dayMovsSelecting=!dayMovsSelecting;daySelSet=new Set();renderDayMovs()}
