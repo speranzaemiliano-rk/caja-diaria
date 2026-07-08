@@ -972,7 +972,6 @@ function openDay(d){
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Créditos a cobrar</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
-          ${d.fis!=null?`<div class="crow" style="border-top:1px solid var(--line);padding-top:8px"><span>Total contado (caja + créditos)</span><span style="font-weight:600">${peso(Math.round(((d.fis||0)+(d.cred||0))*100)/100)}</span></div>`:''}
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
       </div>${caja}${credDetail}
     </div>`;
@@ -1082,9 +1081,9 @@ function cascadeChain(ctxId,cur,ud){
       const newCredSi=prevCred,newCred=Math.round((prevCred+credAdj)*100)/100;
       const newSi=prevSf!=null?prevSf:d.si;
       const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0))*100)/100;
-      // Diferencia de caja: los créditos a cobrar cuentan como efectivo para el
-      // arqueo (junto con lo contado físicamente), no son solo informativos.
-      const newDif=d.fis!=null?Math.round((newSf-((d.fis||0)+newCred))*100)/100:null;
+      // Diferencia de caja: solo compara efectivo (movimientos vs conteo físico).
+      // Los créditos a cobrar quedan aparte, netos del efectivo — no se suman acá.
+      const newDif=d.fis!=null?Math.round((newSf-(d.fis||0))*100)/100:null;
       const changed=Math.round((d.si||0)*100)!==Math.round(newSi*100)||Math.round((d.sf||0)*100)!==Math.round(newSf*100)||Math.round((d.credSi||0)*100)!==Math.round(newCredSi*100)||Math.round((d.cred||0)*100)!==Math.round(newCred*100)||d.dif!==newDif;
       if(changed){
         const rec={...d,si:newSi,sf:newSf,dif:newDif,credSi:newCredSi,cred:newCred,credAdj};
