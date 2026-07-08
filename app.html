@@ -1133,6 +1133,23 @@ function registerLoan(fromCtx,toCtx,cur,amount,note,iso){
   loans.push({id,iso,from:{id:fromCtx.id,empresa:fromCtx.empresa,proyecto:fromCtx.proyecto},to:{id:toCtx.id,empresa:toCtx.empresa,proyecto:toCtx.proyecto},cur,amount:Math.abs(amount),note:note||''});
   saveLoans();
 }
+// Cambio de divisa: compra/venta de dólares dentro de la MISMA empresa/proyecto.
+// Genera un movimiento en la caja $ y otro en la caja US$ (mismo patrón que un
+// préstamo, pero entre las 2 monedas de un mismo contexto en vez de entre contextos).
+function registerExchange(ctx,type,usdAmount,arsAmount,note,iso){
+  const id='cx_'+Math.random().toString(36).slice(2,10);
+  const label=type==='venta'?'Venta de divisa':'Compra de divisa';
+  const noteTxt=note?(' — '+note):'';
+  if(type==='venta'){
+    // Vendo dólares: sale US$ de la caja US$, entra $ a la caja $.
+    applyLoanMovement(ctx.id,'USD',iso,-Math.abs(usdAmount),label+noteTxt,'CAMBIO#'+id);
+    applyLoanMovement(ctx.id,'ARS',iso,Math.abs(arsAmount),label+noteTxt,'CAMBIO#'+id);
+  }else{
+    // Compro dólares: sale $ de la caja $, entra US$ a la caja US$.
+    applyLoanMovement(ctx.id,'ARS',iso,-Math.abs(arsAmount),label+noteTxt,'CAMBIO#'+id);
+    applyLoanMovement(ctx.id,'USD',iso,Math.abs(usdAmount),label+noteTxt,'CAMBIO#'+id);
+  }
+}
 // Quita los 2 movimientos que un préstamo generó (origen y destino), recalculando
 // ese día en cada caja. Se usa para poder editar o eliminar un préstamo sin dejar
 // movimientos huérfanos.
@@ -1321,7 +1338,7 @@ function openEditor(existing){
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
     if(!m.movs.length)m.movs=[blankMov()];
   }
-  edState=m;edState.loans=[];
+  edState=m;edState.loans=[];edState.fx=[];
   const symLabel=CUR_SYM[CUR];
   document.getElementById('editor').innerHTML=`
     <div class="ed-head"><div class="ei">${existing?'✎':'＋'}</div>
@@ -1371,6 +1388,22 @@ function openEditor(existing){
         <div id="ed_loanErr" class="errline" style="margin-top:6px"></div>
         <div id="ed_loanList" style="margin-top:8px"></div>
       </div>
+      <div class="ed-sub" style="margin-top:20px">💱 Cambio de divisa <div class="ln2"></div></div>
+      <div class="loanbox" style="background:var(--panel2,rgba(127,127,127,.05));border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px">
+        <div class="es" style="margin:0 0 12px">Opcional. Compra/venta de dólares — genera un movimiento en la caja $ y otro en la caja US$ de ${esc(ctxLabel(activeContext()))}, con la fecha de este día.</div>
+        <div class="fgrid" style="grid-template-columns:1.3fr .8fr .9fr 1fr;align-items:end;gap:10px">
+          <div class="field"><label>Tipo</label><select class="sel" id="ed_fxType"><option value="venta">Venta de divisa (doy US$, recibo $)</option><option value="compra">Compra de divisa (doy $, recibo US$)</option></select></div>
+          <div class="field"><label>Importe (US$)</label><input class="amt" id="ed_fxUsd" placeholder="0"></div>
+          <div class="field"><label>Cotización ($/US$)</label><input class="amt" id="ed_fxRate" placeholder="0"></div>
+          <div class="field"><label>Importe ($) — calculado</label><input class="amt ro" id="ed_fxArs" value="" disabled placeholder="0"></div>
+        </div>
+        <div class="fgrid" style="grid-template-columns:1fr auto;align-items:end;gap:10px;margin-top:10px">
+          <div class="field"><label>Nota — opcional</label><input id="ed_fxNote" placeholder="Ej: cliente Juan"></div>
+          <button class="addrow" id="ed_fxAdd" type="button" style="margin:0;height:44px;white-space:nowrap">＋ Sumar</button>
+        </div>
+        <div id="ed_fxErr" class="errline" style="margin-top:6px"></div>
+        <div id="ed_fxList" style="margin-top:8px"></div>
+      </div>
       <div id="edErr" class="errline" style="margin-top:10px"></div>
     </div>
     <div class="ed-foot">
@@ -1400,7 +1433,41 @@ function openEditor(existing){
     document.getElementById('ed_loanAmt').value='';document.getElementById('ed_loanNote').value='';
     renderEdLoans();recalcEditor();
   };
+  renderEdFx();
+  document.getElementById('ed_fxUsd').addEventListener('input',recalcFxPreview);
+  document.getElementById('ed_fxRate').addEventListener('input',recalcFxPreview);
+  document.getElementById('ed_fxAdd').onclick=()=>{
+    const errEl=document.getElementById('ed_fxErr');errEl.textContent='';
+    const type=document.getElementById('ed_fxType').value;
+    const usd=num(document.getElementById('ed_fxUsd').value);
+    const rate=num(document.getElementById('ed_fxRate').value);
+    const note=document.getElementById('ed_fxNote').value.trim();
+    if(usd==null||usd<=0){errEl.textContent='Ingresá el importe en dólares.';return}
+    if(rate==null||rate<=0){errEl.textContent='Ingresá la cotización.';return}
+    const ars=Math.round(usd*rate*100)/100;
+    edState.fx.push({type,usd,ars,note});
+    document.getElementById('ed_fxUsd').value='';document.getElementById('ed_fxRate').value='';document.getElementById('ed_fxNote').value='';
+    recalcFxPreview();renderEdFx();recalcEditor();
+  };
   document.getElementById('edOverlay').classList.add('on');document.body.style.overflow='hidden';
+}
+function recalcFxPreview(){
+  const usd=num(document.getElementById('ed_fxUsd').value);
+  const rate=num(document.getElementById('ed_fxRate').value);
+  const el=document.getElementById('ed_fxArs');if(!el)return;
+  el.value=(usd!=null&&rate!=null)?fmtAR.format(Math.round(usd*rate*100)/100):'';
+}
+function renderEdFx(){
+  const el=document.getElementById('ed_fxList');if(!el)return;
+  if(!edState.fx||!edState.fx.length){el.innerHTML='';return}
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:6px">'+edState.fx.map((fx,i)=>{
+    const label=fx.type==='venta'?'Venta de divisa':'Compra de divisa';
+    return `<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--panel,rgba(127,127,127,.06));border:1px solid var(--line);border-radius:9px;padding:8px 12px">
+      <span style="font-size:13px">💱 ${label} · <b class="mono">US$ ${fmtAR.format(Math.round(fx.usd))}</b> ↔ <b class="mono">$ ${fmtAR.format(Math.round(fx.ars))}</b>${fx.note?' · <span style="color:var(--ink3)">'+esc(fx.note)+'</span>':''}</span>
+      <button class="rmrow" type="button" data-i="${i}" title="Quitar">✕</button>
+    </div>`;
+  }).join('')+'</div>';
+  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{edState.fx.splice(+b.dataset.i,1);renderEdFx();recalcEditor()});
 }
 function renderEdLoanSelect(){
   const sel=document.getElementById('ed_loanTo');if(!sel)return;
@@ -1499,11 +1566,20 @@ function recalcFis(){
 function recalcEditor(){
   const c=computeEditor();
   const loanTot=(edState.loans||[]).reduce((s,l)=>s+(+l.amt||0),0);
-  const egr=Math.round((c.egr-loanTot)*100)/100;
-  const sf=Math.round((c.sf-loanTot)*100)/100;
-  document.getElementById('s_in').textContent=peso(c.ing);
+  // Un cambio de divisa pendiente afecta esta caja como ingreso o egreso según
+  // si esta moneda (CUR) es la que entra o la que sale en esa operación.
+  let fxIng=0,fxEgr=0;
+  (edState.fx||[]).forEach(fx=>{
+    const amt=CUR==='ARS'?fx.ars:fx.usd;
+    const inflow=(CUR==='ARS'&&fx.type==='venta')||(CUR==='USD'&&fx.type==='compra');
+    if(inflow)fxIng+=amt;else fxEgr+=amt;
+  });
+  const ing=Math.round((c.ing+fxIng)*100)/100;
+  const egr=Math.round((c.egr-loanTot-fxEgr)*100)/100;
+  const sf=Math.round((c.sf-loanTot+fxIng-fxEgr)*100)/100;
+  document.getElementById('s_in').textContent=peso(ing);
   document.getElementById('s_out').textContent=pesoS(egr);
-  const net=Math.round((c.ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
+  const net=Math.round((ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
   document.getElementById('s_sf').textContent=peso(sf);
 }
 function saveDay(){
@@ -1536,8 +1612,18 @@ function saveDay(){
     const fromCtx=activeContext();
     pendingLoans.forEach(l=>{const toCtx=contexts.find(c=>c.id===l.to);if(toCtx)registerLoan(fromCtx,toCtx,CUR,+l.amt,l.note,iso)});
   }
+  // Cambios de divisa cargados en este día: generan un movimiento en la caja $ y
+  // otro en la caja US$ de esta misma empresa/proyecto.
+  const pendingFx=(edState.fx||[]).slice();
+  if(pendingFx.length){
+    const ctx=activeContext();
+    pendingFx.forEach(fx=>registerExchange(ctx,fx.type,fx.usd,fx.ars,fx.note,iso));
+  }
   const wasEdit=!!editIso;closeEditor();renderAll();
-  toast(pendingLoans.length?((wasEdit?'Día actualizado':'Día agregado')+' + '+pendingLoans.length+' préstamo(s) registrado(s)'):(wasEdit?'Día actualizado':'Día agregado correctamente'));
+  const extras=[];
+  if(pendingLoans.length)extras.push(pendingLoans.length+' préstamo(s)');
+  if(pendingFx.length)extras.push(pendingFx.length+' cambio(s) de divisa');
+  toast(extras.length?((wasEdit?'Día actualizado':'Día agregado')+' + '+extras.join(' + ')+' registrado(s)'):(wasEdit?'Día actualizado':'Día agregado correctamente'));
   setTimeout(()=>openDayIso(iso),120);
 }
 function deleteDay(iso){
