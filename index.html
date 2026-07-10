@@ -137,11 +137,15 @@
           <p class="lede">Registrá ingresos y egresos, mirá el saldo en vivo y cerrá el día en segundos. Una sola caja, sincronizada en la compu y el celular.</p>
           <div class="cta">
             <a class="btn btn-primary" href="app.html">Abrir mi caja →</a>
+            <button class="btn btn-ghost" id="installBtn" type="button" style="display:none">📲 Instalar app</button>
             <a class="btn btn-text" href="#funciones">Ver funciones</a>
+          </div>
+          <div id="iosHint" style="display:none;margin-top:16px;font-size:13px;color:var(--ink2);background:var(--surface);border:1px solid var(--line2);border-radius:12px;padding:12px 14px;max-width:40ch">
+            📲 <b>Instalá en tu iPhone:</b> tocá <b>Compartir</b> (el cuadradito con la flecha ↑) y elegí <b>“Agregar a inicio”</b>. Queda como una app, gratis.
           </div>
           <p class="note">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-            Gratis · sin instalar nada · la misma caja en todos lados.
+            Gratis · se instala en un toque · la misma caja en todos lados.
           </p>
         </div>
 
@@ -278,6 +282,26 @@
   })();
 
   if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+
+  /* ---- Instalar como app (PWA), gratis y sin tienda ---- */
+  (function(){
+    const btn=document.getElementById('installBtn');
+    const iosHint=document.getElementById('iosHint');
+    if(!btn)return;
+    const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+    if(standalone)return; // ya está instalada
+    let deferred=null;
+    // Android / Chrome / Edge: aparece el botón y al tocarlo dispara el instalador nativo.
+    window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;btn.style.display='inline-flex'});
+    btn.addEventListener('click',async()=>{
+      if(deferred){deferred.prompt();try{await deferred.userChoice}catch(e){}deferred=null;btn.style.display='none';return}
+      if(iosHint)iosHint.style.display=iosHint.style.display==='none'?'block':'none';
+    });
+    window.addEventListener('appinstalled',()=>{btn.style.display='none';if(iosHint)iosHint.style.display='none'});
+    // iPhone/iPad (Safari no dispara beforeinstallprompt): mostramos el botón con la guía.
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    if(isIOS){btn.style.display='inline-flex';btn.textContent='📲 Instalar en iPhone'}
+  })();
 </script>
 </body>
 </html>
