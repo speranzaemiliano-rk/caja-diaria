@@ -118,6 +118,8 @@ body{
 .kpi.acc{border-color:rgba(212,166,74,.4)}
 .kpi.acc .num{color:var(--gold2)}
 .kpi.ctxcard{cursor:pointer;transition:.15s}
+.kpi.small{padding:14px 16px}
+.kpi.small .num{font-size:18px;margin-top:6px}
 .kpi.ctxcard:hover{border-color:var(--gold);transform:translateY(-1px)}
 .pos{color:var(--green)} .neg{color:var(--red)}
 .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
@@ -937,11 +939,17 @@ function renderKpis(){
   const ingCash=Math.round(((d.ing||0)-credIn)*100)/100;
   const egrCash=Math.round(((d.egr||0)+credOut)*100)/100;
   const sfCash=Math.round((d.sf-sfCred)*100)/100;
+  // Tarjeta chica de diferencia de caja del día (además de la alarma, que solo
+  // aparece cuando es grande): acá se ve siempre, aunque sea chica o no haya
+  // arqueo cargado todavía — un vistazo rápido sin abrir el detalle del día.
+  const realCaja=d.fis!=null?Math.round(((d.fis||0)+(d.cred||0))*100)/100:null;
+  const difColor=d.fis==null?'var(--ink3)':(isWarn(d)?'var(--red)':'var(--green)');
   document.getElementById('kpis').innerHTML=`
     <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo ${peso(siCash)} · Crédito ${peso(siCred)}</div></div>
     <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">Efectivo ${peso(ingCash)} · Crédito ${peso(credIn)}</div></div>
     <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">Efectivo ${pesoS(egrCash)} · Crédito ${pesoS(-credOut)}</div></div>
-    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(sfCash)} · Crédito ${peso(sfCred)}</div></div>`;
+    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(sfCash)} · Crédito ${peso(sfCred)}</div></div>
+    <div class="kpi small"><div class="lab">⚖ Diferencia de caja</div><div class="num mono" style="color:${difColor}">${d.fis!=null?pesoS(d.dif):'—'}</div><div class="meta">${d.fis!=null?'Según sistema '+peso(d.sf):'Sin arqueo cargado'}</div>${d.fis!=null?`<div class="meta mono">Caja real ${peso(realCaja)}</div>`:''}</div>`;
 }
 let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
 function toggleDaySelMode(){dayMovsSelecting=!dayMovsSelecting;daySelSet=new Set();renderDayMovs()}
