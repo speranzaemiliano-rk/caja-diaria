@@ -661,7 +661,52 @@ function renderCtxLoanBadge(){
   const el=document.getElementById('ctxLoanBadge');if(!el)return;
   const ctx=activeContext();
   const parts=['ARS','USD'].map(cur=>loanNetLine(ctx.id,cur)).filter(Boolean);
-  el.innerHTML=parts.length?`<div style="font-size:12px;font-weight:600;display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:0 2px">${parts.join('')}</div>`:'';
+  el.innerHTML=parts.length?`<div class="ctxloanbadge" onclick="openLoanDetail('${ctx.id}')" title="Ver quién le debe y a quién le debe" style="font-size:12px;font-weight:600;display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:5px 8px;cursor:pointer;border:1px solid var(--line);border-radius:9px">${parts.join('')}</div>`:'';
+}
+function ctxLabelById(id){const c=contexts.find(x=>x.id===id);return c?ctxLabel(c):null}
+// Neto de préstamos de un contexto contra CADA contraparte, en una moneda.
+// net>0 = esa contraparte le debe; net<0 = el contexto le debe a esa contraparte.
+function ctxCounterpartyNets(ctxId,cur){
+  const acc={};
+  loans.forEach(l=>{
+    if(l.cur!==cur)return;
+    let other=null,sign=0;
+    if(l.from.id===ctxId){other=l.to;sign=1}       // prestó → la contraparte le debe
+    else if(l.to.id===ctxId){other=l.from;sign=-1}  // recibió → le debe a la contraparte
+    else return;
+    if(!acc[other.id])acc[other.id]={id:other.id,label:ctxLabelById(other.id)||ctxLabel(other),net:0};
+    acc[other.id].net+=sign*l.amount;
+  });
+  return Object.values(acc).filter(x=>Math.abs(x.net)>0.005);
+}
+function openLoanDetail(ctxId){
+  const ctx=contexts.find(c=>c.id===ctxId);if(!ctx)return;
+  closeSideMenu();
+  let body='';
+  ['ARS','USD'].forEach(cur=>{
+    const items=ctxCounterpartyNets(ctxId,cur);if(!items.length)return;
+    const sym=CUR_SYM[cur];
+    const led=items.filter(x=>x.net>0).sort((a,b)=>b.net-a.net);   // le deben
+    const owe=items.filter(x=>x.net<0).sort((a,b)=>a.net-b.net);   // le debe a
+    const net=Math.round(items.reduce((s,x)=>s+x.net,0)*100)/100;
+    body+=`<div class="ctrlbox" style="margin-top:14px"><h4>Caja ${cur==='ARS'?'$ Pesos':'US$ Dólares'}</h4>`;
+    if(led.length){
+      body+=`<div class="crow" style="border:none;padding-bottom:2px"><span style="color:var(--green);font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700">▲ Le deben</span></div>`;
+      led.forEach(x=>body+=`<div class="crow"><span>${esc(x.label)}</span><span class="pos" style="font-weight:600">${sym} ${fmtAR.format(Math.round(x.net))}</span></div>`);
+    }
+    if(owe.length){
+      body+=`<div class="crow" style="border:none;padding-bottom:2px;margin-top:8px"><span style="color:var(--red);font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700">▼ Le debe a</span></div>`;
+      owe.forEach(x=>body+=`<div class="crow"><span>${esc(x.label)}</span><span class="neg" style="font-weight:600">${sym} ${fmtAR.format(Math.round(Math.abs(x.net)))}</span></div>`);
+    }
+    body+=`<div class="crow" style="border-top:1px solid var(--line);padding-top:9px;margin-top:8px"><span style="font-weight:700">Saldo neto</span><span class="${net>=0?'pos':'neg'}" style="font-weight:700">${net>=0?'Le deben ':'Debe '}${sym} ${fmtAR.format(Math.round(Math.abs(net)))}</span></div></div>`;
+  });
+  if(!body)body='<div class="empty-state"><div class="big">✓</div>Esta empresa/proyecto no tiene préstamos pendientes</div>';
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">⇄</div>
+      <div><h3>${esc(ctxLabel(ctx))}</h3><div class="msub">Cuenta corriente de préstamos · quién le debe y a quién le debe</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">${body}</div>`;
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
 function switchContext(id){
   activeContextId=id;
@@ -1288,10 +1333,10 @@ function renderLoanSummary(){
   const el=document.getElementById('loanSummary');if(!el)return;
   const rows=contexts.map(c=>({c,parts:['ARS','USD'].map(cur=>loanNetLine(c.id,cur,'mono')).filter(Boolean)})).filter(r=>r.parts.length);
   if(!rows.length){el.innerHTML='<div class="empty-state"><div class="big">✓</div>Ninguna empresa/proyecto tiene préstamos pendientes</div>';return}
-  el.innerHTML='<div class="bars">'+rows.map(r=>`<div class="bar-row" style="grid-template-columns:1fr auto;cursor:default">
+  el.innerHTML='<div class="bars">'+rows.map(r=>`<div class="bar-row" onclick="openLoanDetail('${r.c.id}')" style="grid-template-columns:1fr auto;cursor:pointer" title="Ver quién le debe y a quién le debe">
       <div class="nm">${esc(ctxLabel(r.c))}</div>
       <div style="display:flex;flex-direction:column;gap:2px;text-align:right;font-weight:600">${r.parts.join('')}</div>
-    </div>`).join('')+'</div>';
+    </div>`).join('')+'</div><p class="note">Tocá una empresa/proyecto para ver el detalle: de quién le deben y a quién le debe.</p>';
 }
 function renderLoanBalances(){
   const pairs={};
