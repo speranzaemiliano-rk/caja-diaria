@@ -2011,17 +2011,30 @@ document.getElementById('emailBackupBtn').onclick=openBackupSettings;
 /* ============ PWA install ============ */
 let deferredInstall=null;
 const installBtn=document.getElementById('installBtn');
+const _standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+const _isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+// Android / Chrome / Edge: aparece al poder instalar y dispara el instalador nativo.
 window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();deferredInstall=e;installBtn.style.display='inline-flex';
+  e.preventDefault();deferredInstall=e;if(!_standalone)installBtn.style.display='inline-flex';
 });
 installBtn.onclick=async()=>{
-  if(!deferredInstall)return;
-  installBtn.style.display='none';
-  deferredInstall.prompt();
-  await deferredInstall.userChoice;
-  deferredInstall=null;
+  if(deferredInstall){installBtn.style.display='none';deferredInstall.prompt();try{await deferredInstall.userChoice}catch(e){}deferredInstall=null;return}
+  // iPhone/iPad: Safari no tiene instalador programático — mostramos la guía.
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">📲</div>
+      <div><h3>Instalá Caja Diaria en tu iPhone</h3><div class="msub">Queda como una app, gratis, sin pasar por la App Store.</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      <ol style="margin:4px 0 0 18px;font-size:15px;line-height:1.9;color:var(--ink)">
+        <li>Tocá el botón <b>Compartir</b> (el cuadradito con la flecha ↑, abajo en Safari).</li>
+        <li>Deslizá y elegí <b>“Agregar a inicio”</b>.</li>
+        <li>Tocá <b>Agregar</b> arriba a la derecha. Listo: te queda el ícono de Caja Diaria en la pantalla.</li>
+      </ol>
+    </div>`;
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 };
 window.addEventListener('appinstalled',()=>{installBtn.style.display='none';deferredInstall=null;toast('Caja Diaria instalada')});
+if(_isIOS&&!_standalone){installBtn.style.display='inline-flex';installBtn.textContent='⇩ Instalar en iPhone'}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})});
 }
