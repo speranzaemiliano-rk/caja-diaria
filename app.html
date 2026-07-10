@@ -902,11 +902,11 @@ function renderWarnBanner(){
   if(!items.length){el.innerHTML='';return}
   items.sort((a,b)=>a.worst.iso<b.worst.iso?1:-1);
   const rows=items.map(it=>`<div class="warnitem" onclick="jumpToCaja('${it.ctx.id}','${it.cur}','${it.worst.iso}')" title="Ver el día">
-      <span class="wn">${esc(ctxLabel(it.ctx))} · ${it.cur==='ARS'?'$ Pesos':'US$ Dólares'} · ${it.worst.date}${it.count>1?' (+'+(it.count-1)+' más)':''}</span>
+      <span class="wn">${esc(ctxLabel(it.ctx))} · ${it.cur==='ARS'?'$ Pesos':'US$ Dólares'} · ${it.worst.date}</span>
       <span class="wv">${pesoCur(it.worst.dif,it.cur)}</span>
     </div>`).join('');
   el.innerHTML=`<div class="warnbanner"><div class="wi">⚠️</div><div class="wt">
-      <h4>Diferencia de caja importante en ${items.length} caja(s)</h4>
+      <h4>Diferencia de caja en el último día de ${items.length} caja(s)</h4>
       <div class="warnitems">${rows}</div>
     </div></div>`;
 }
@@ -1386,14 +1386,16 @@ function ctxRealDays(ctxId,cur){
   return Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
 }
 // Alarma de diferencia de caja grande: recorre TODAS las empresas/proyectos y
-// monedas (no solo la caja activa) usando el mismo umbral que isWarn(), y
-// devuelve el descuadre más reciente de cada caja que tenga alguno pendiente.
+// monedas (no solo la caja activa) usando el mismo umbral que isWarn(), pero
+// mirando SOLO el último día cargado de cada caja — los descuadres históricos
+// viejos no la disparan (pedido del usuario: "solo que aparezca la del día").
 function computeGlobalWarnings(){
   const out=[];
   contexts.forEach(c=>{
     ['ARS','USD'].forEach(cur=>{
-      const warns=ctxRealDays(c.id,cur).filter(isWarn);
-      if(warns.length)out.push({ctx:c,cur,worst:warns[warns.length-1],count:warns.length});
+      const ds=ctxRealDays(c.id,cur);
+      const lastD=ds[ds.length-1];
+      if(lastD&&isWarn(lastD))out.push({ctx:c,cur,worst:lastD});
     });
   });
   return out;
