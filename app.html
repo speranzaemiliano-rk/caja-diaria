@@ -117,6 +117,8 @@ body{
 .kpi .meta{font-size:12px;color:var(--ink2);margin-top:5px}
 .kpi.acc{border-color:rgba(212,166,74,.4)}
 .kpi.acc .num{color:var(--gold2)}
+.kpi.ctxcard{cursor:pointer;transition:.15s}
+.kpi.ctxcard:hover{border-color:var(--gold);transform:translateY(-1px)}
 .pos{color:var(--green)} .neg{color:var(--red)}
 .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
 .chip.up{background:var(--green-bg);color:var(--green)} .chip.down{background:var(--red-bg);color:var(--red)}
@@ -176,6 +178,18 @@ tbody tr:last-child td{border-bottom:none}
 .flag.ok{background:var(--green-bg);color:var(--green)}
 .flag.warn{background:var(--red-bg);color:var(--red)}
 .flag.idle{background:rgba(100,122,145,.12);color:var(--ink3)}
+
+/* alarma de diferencia de caja: persistente arriba de todo, en cualquier vista */
+.warnbanner{background:linear-gradient(160deg,var(--red-bg),var(--panel));border:1px solid var(--red);border-radius:var(--r);padding:16px 20px;margin-bottom:22px;display:flex;gap:14px;align-items:flex-start;box-shadow:var(--shadow)}
+.warnbanner .wi{font-size:22px;line-height:1;flex-shrink:0;animation:warnpulse 1.8s ease-in-out infinite}
+@keyframes warnpulse{0%,100%{opacity:1}50%{opacity:.45}}
+.warnbanner .wt{flex:1;min-width:0}
+.warnbanner .wt h4{font-family:'Roboto';font-size:14.5px;font-weight:700;color:var(--red);margin-bottom:8px}
+.warnitems{display:flex;flex-direction:column;gap:6px}
+.warnitem{display:flex;justify-content:space-between;gap:14px;align-items:center;font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 12px;cursor:pointer;transition:.15s}
+.warnitem:hover{border-color:var(--red);background:var(--red-bg)}
+.warnitem .wn{color:var(--ink2)}
+.warnitem .wv{font-family:'Roboto Mono';font-weight:700;color:var(--red);white-space:nowrap}
 
 /* detail modal */
 .overlay{position:fixed;inset:0;background:rgba(5,8,12,.7);backdrop-filter:blur(5px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto}
@@ -412,6 +426,7 @@ tbody tr:hover{background:#f1f3f4}
       </div>
     </div>
     <div class="wrap">
+      <div id="warnBanner"></div>
       <!-- DASHBOARD -->
       <section class="view on" id="v-dash">
         <div class="kpis" id="kpis"></div>
@@ -447,49 +462,72 @@ tbody tr:hover{background:#f1f3f4}
 
       <!-- ANALYTICS -->
       <section class="view" id="v-analytics">
-        <div class="kpis" id="anaKpis"></div>
-        <div class="grid2">
-          <div class="panel">
-            <div class="ph">
-              <div><h3>Evolución del saldo</h3><p>Saldo final de caja por día registrado</p></div>
-              <div class="seg" id="rangeSeg">
-                <button data-r="90">90d</button>
-                <button data-r="180">180d</button>
-                <button data-r="365">1 año</button>
-                <button data-r="0" class="on">Todo</button>
+        <div class="ph"><div><h3>Resumen por empresa / proyecto</h3><p>Saldo en pesos, dólares y préstamos de cada caja — tocá una tarjeta para ir a esa caja</p></div></div>
+        <div class="kpis" id="ctxSummaryCards" style="margin-bottom:26px"></div>
+
+        <div class="panel" style="margin-bottom:18px">
+          <div class="ph"><div><h3>Préstamos entre empresas — detalle</h3><p>Posición de cada empresa/proyecto, por moneda</p></div></div>
+          <div id="anaLoanDetail"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:18px">
+          <div class="ph"><div><h3>Crédito vs. efectivo</h3><p>Composición del último arqueo (caja real) cargado en cada caja</p></div></div>
+          <div id="creditCashRatio"></div>
+        </div>
+
+        <div class="month">
+          <div class="mhead" data-key="ana-old" onclick="toggleM(this)">
+            <span class="cv">▶</span>
+            <div><div class="mt">Gráficos históricos</div><div class="mc">Evolución, composición, flujo mensual, conceptos y actividad</div></div>
+          </div>
+          <div class="mbody" id="anaOldBody">
+            <div style="padding:18px 20px 20px">
+              <div class="kpis" id="anaKpis"></div>
+              <div class="grid2">
+                <div class="panel">
+                  <div class="ph">
+                    <div><h3>Evolución del saldo</h3><p>Saldo final de caja por día registrado</p></div>
+                    <div class="seg" id="rangeSeg">
+                      <button data-r="90">90d</button>
+                      <button data-r="180">180d</button>
+                      <button data-r="365">1 año</button>
+                      <button data-r="0" class="on">Todo</button>
+                    </div>
+                  </div>
+                  <div id="lineChart"></div>
+                </div>
+                <div class="panel">
+                  <div class="ph"><div><h3>Composición</h3><p>Ingresos vs egresos totales</p></div></div>
+                  <div id="donut"></div>
+                </div>
+              </div>
+              <div class="grid2 rev">
+                <div class="panel">
+                  <div class="ph"><div><h3>Diferencias de caja</h3><p>Días con descuadre relevante</p></div></div>
+                  <div id="diffList"></div>
+                </div>
+                <div class="panel">
+                  <div class="ph"><div><h3>Flujo mensual</h3><p>Ingresos y egresos por mes</p></div></div>
+                  <div id="monthBars"></div>
+                  <div class="legend"><span><i style="background:var(--green)"></i>Ingresos</span><span><i style="background:var(--red)"></i>Egresos</span></div>
+                </div>
+              </div>
+              <div class="grid2">
+                <div class="panel">
+                  <div class="ph"><div><h3>Principales conceptos</h3><p>Por monto total movido (absoluto)</p></div></div>
+                  <div id="topConcepts"></div>
+                </div>
+                <div class="panel">
+                  <div class="ph"><div><h3>Actividad por día de semana</h3><p>Movimientos registrados</p></div></div>
+                  <div id="weekdayBars"></div>
+                </div>
+              </div>
+              <div class="panel" style="margin-top:18px">
+                <div class="ph"><div><h3>Resumen mensual detallado</h3><p>Saldo de cierre, flujo neto y actividad</p></div></div>
+                <div style="overflow:auto"><table id="monthTable"></table></div>
               </div>
             </div>
-            <div id="lineChart"></div>
           </div>
-          <div class="panel">
-            <div class="ph"><div><h3>Composición</h3><p>Ingresos vs egresos totales</p></div></div>
-            <div id="donut"></div>
-          </div>
-        </div>
-        <div class="grid2 rev">
-          <div class="panel">
-            <div class="ph"><div><h3>Diferencias de caja</h3><p>Días con descuadre relevante</p></div></div>
-            <div id="diffList"></div>
-          </div>
-          <div class="panel">
-            <div class="ph"><div><h3>Flujo mensual</h3><p>Ingresos y egresos por mes</p></div></div>
-            <div id="monthBars"></div>
-            <div class="legend"><span><i style="background:var(--green)"></i>Ingresos</span><span><i style="background:var(--red)"></i>Egresos</span></div>
-          </div>
-        </div>
-        <div class="grid2">
-          <div class="panel">
-            <div class="ph"><div><h3>Principales conceptos</h3><p>Por monto total movido (absoluto)</p></div></div>
-            <div id="topConcepts"></div>
-          </div>
-          <div class="panel">
-            <div class="ph"><div><h3>Actividad por día de semana</h3><p>Movimientos registrados</p></div></div>
-            <div id="weekdayBars"></div>
-          </div>
-        </div>
-        <div class="panel" style="margin-top:18px">
-          <div class="ph"><div><h3>Resumen mensual detallado</h3><p>Saldo de cierre, flujo neto y actividad</p></div></div>
-          <div style="overflow:auto"><table id="monthTable"></table></div>
         </div>
       </section>
 
@@ -564,6 +602,10 @@ const fmtAR=new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
 const CUR_SYM={ARS:'$',USD:'US$'};
 const peso=n=>(n==null||isNaN(n))?'—':CUR_SYM[CUR]+' '+fmtAR.format(Math.round(n));
 const pesoS=n=>(n==null||isNaN(n))?'—':(n<0?'-'+CUR_SYM[CUR]+' ':CUR_SYM[CUR]+' ')+fmtAR.format(Math.abs(Math.round(n)));
+// Igual que peso()/pesoS() pero para una moneda explícita (no la activa) — usado
+// donde se muestran varias cajas/monedas a la vez (tarjetas por empresa, alarma).
+const pesoCur=(n,cur)=>(n==null||isNaN(n))?'—':CUR_SYM[cur]+' '+fmtAR.format(Math.round(n));
+const pesoCurS=(n,cur)=>(n==null||isNaN(n))?'—':(n<0?'-'+CUR_SYM[cur]+' ':CUR_SYM[cur]+' ')+fmtAR.format(Math.abs(Math.round(n)));
 const compact=n=>{const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(1).replace('.0','')+'B';if(a>=1e6)return(n/1e6).toFixed(1).replace('.0','')+'M';if(a>=1e3)return Math.round(n/1e3)+'k';return Math.round(n)};
 const esc=s=>(''+(s==null?'':s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tip=document.getElementById('tip');
@@ -805,10 +847,9 @@ function closeSideMenu(){document.getElementById('side').classList.remove('show'
 document.getElementById('sideScrim').onclick=closeSideMenu;
 const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales'],loans:['Préstamos','Transferencias entre empresas y proyectos']};
 let currentView='dash';
-document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
-  if(!b.dataset.v)return; // botones sin vista (ej: "⌂ Presentación") no navegan
-  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-  currentView=b.dataset.v;
+function goToView(v){
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+  currentView=v;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   document.getElementById('v-'+currentView).classList.add('on');
   document.getElementById('vTitle').textContent=TITLES[currentView][0];
@@ -816,7 +857,24 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
   closeSideMenu();
   if(currentView==='dash')drawLine(currentRange);
   if(currentView==='loans')renderLoans();
+}
+document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
+  if(!b.dataset.v)return; // botones sin vista (ej: "⌂ Presentación") no navegan
+  goToView(b.dataset.v);
 });
+// Cambia de empresa/proyecto y/o moneda activa y navega directo a ese día —
+// usado por la alarma de descuadre y las tarjetas de Análisis, que muestran
+// datos de TODAS las cajas y necesitan poder saltar a cualquiera de ellas.
+function jumpToCaja(ctxId,cur,iso){
+  closeModal();
+  if(ctxId!==activeContextId){activeContextId=ctxId;try{localStorage.setItem(ACTIVE_CTX_KEY,ctxId)}catch(e){}}
+  if(cur&&cur!==CUR){CUR=cur;try{localStorage.setItem(ACTIVE_CUR_KEY,CUR)}catch(e){}}
+  document.querySelectorAll('#cajaSeg button').forEach(x=>x.classList.toggle('on',x.dataset.c===CUR));
+  userDays=loadUser();
+  renderCtxSelectors();renderAll();
+  goToView('dash');
+  if(iso){const d=days.find(x=>x.iso===iso);if(d)openDay(d)}
+}
 
 /* ============ RENDER ALL ============ */
 let currentRange=0;
@@ -833,6 +891,24 @@ function renderAll(){
   renderKpis();renderDayMovs();renderDonut();renderDiffList();renderMonthBars();drawLine(currentRange);
   fillYearSelects();renderIndex();
   renderAnalytics();drawWeekday();renderMovs();
+  renderWarnBanner();
+}
+// Alarma de diferencia de caja grande: visible siempre, arriba de todo (no
+// solo en Análisis), para cualquier empresa/proyecto/moneda con un descuadre
+// pendiente — no hace falta ir a buscarlo.
+function renderWarnBanner(){
+  const el=document.getElementById('warnBanner');if(!el)return;
+  const items=computeGlobalWarnings();
+  if(!items.length){el.innerHTML='';return}
+  items.sort((a,b)=>a.worst.iso<b.worst.iso?1:-1);
+  const rows=items.map(it=>`<div class="warnitem" onclick="jumpToCaja('${it.ctx.id}','${it.cur}','${it.worst.iso}')" title="Ver el día">
+      <span class="wn">${esc(ctxLabel(it.ctx))} · ${it.cur==='ARS'?'$ Pesos':'US$ Dólares'} · ${it.worst.date}${it.count>1?' (+'+(it.count-1)+' más)':''}</span>
+      <span class="wv">${pesoCur(it.worst.dif,it.cur)}</span>
+    </div>`).join('');
+  el.innerHTML=`<div class="warnbanner"><div class="wi">⚠️</div><div class="wt">
+      <h4>Diferencia de caja importante en ${items.length} caja(s)</h4>
+      <div class="warnitems">${rows}</div>
+    </div></div>`;
 }
 function renderKpis(){
   // El Resumen muestra EL DÍA (último registrado): saldo inicial/final + ingresos/egresos del día.
@@ -1095,7 +1171,95 @@ document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeM
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeEditor()}});
 
 /* ============ ANALYTICS ============ */
+// Tarjeta por empresa/proyecto: saldo $ y US$ de esa caja + posición neta de
+// préstamos. Es lo primero que se ve en Análisis, a pedido del usuario ("una
+// tarjeta con cada empresa y proyecto que tenga un resumen de pesos dólares
+// préstamos").
+function renderCtxSummaryCards(){
+  const el=document.getElementById('ctxSummaryCards');if(!el)return;
+  el.innerHTML=contexts.map(c=>{
+    const dArs=ctxRealDays(c.id,'ARS'),dUsd=ctxRealDays(c.id,'USD');
+    const lastArs=dArs.length?dArs[dArs.length-1]:null,lastUsd=dUsd.length?dUsd[dUsd.length-1]:null;
+    const loanParts=['ARS','USD'].map(cur=>loanNetLine(c.id,cur,'mono')).filter(Boolean);
+    return `<div class="kpi ctxcard" onclick="jumpToCaja('${c.id}','ARS',null)" title="Ir a esta caja">
+      <div class="lab">◆ ${esc(ctxLabel(c))}</div>
+      <div class="num mono" style="font-size:19px;margin-top:10px">${lastArs?pesoCur(lastArs.sf,'ARS'):'—'}</div>
+      <div class="meta">$ Pesos${lastArs?' · '+lastArs.date:' · sin movimientos'}</div>
+      <div class="num mono" style="font-size:16px;margin-top:10px;color:var(--ink2)">${lastUsd?pesoCur(lastUsd.sf,'USD'):'—'}</div>
+      <div class="meta">US$ Dólares${lastUsd?' · '+lastUsd.date:' · sin movimientos'}</div>
+      ${loanParts.length?`<div class="meta" style="margin-top:10px;display:flex;flex-direction:column;gap:3px;font-weight:600">${loanParts.join('')}</div>`:''}
+    </div>`;
+  }).join('');
+}
+// Informe de préstamos "más detallado" que el resumen de la vista Préstamos:
+// posición bruta (le deben / debe / neto) por caja, en las dos monedas, más
+// totales generales — no solo el neto que ya muestra renderLoanSummary().
+function renderAnaLoanDetail(){
+  const el=document.getElementById('anaLoanDetail');if(!el)return;
+  if(!loans.length){el.innerHTML='<div class="empty-state"><div class="big">✓</div>Todavía no registraste préstamos entre empresas/proyectos</div>';return}
+  const rows=contexts.map(c=>{
+    const arsItems=ctxCounterpartyNets(c.id,'ARS'),usdItems=ctxCounterpartyNets(c.id,'USD');
+    const arsLed=arsItems.filter(x=>x.net>0).reduce((s,x)=>s+x.net,0),arsOwe=arsItems.filter(x=>x.net<0).reduce((s,x)=>s-x.net,0);
+    const usdLed=usdItems.filter(x=>x.net>0).reduce((s,x)=>s+x.net,0),usdOwe=usdItems.filter(x=>x.net<0).reduce((s,x)=>s-x.net,0);
+    const nLoans=loans.filter(l=>l.from.id===c.id||l.to.id===c.id).length;
+    return {c,arsLed,arsOwe,usdLed,usdOwe,nLoans};
+  }).filter(r=>r.nLoans>0).sort((a,b)=>(b.arsLed+b.arsOwe+b.usdLed+b.usdOwe)-(a.arsLed+a.arsOwe+a.usdLed+a.usdOwe));
+  const totArs=loans.filter(l=>l.cur==='ARS').reduce((s,l)=>s+l.amount,0);
+  const totUsd=loans.filter(l=>l.cur==='USD').reduce((s,l)=>s+l.amount,0);
+  const pendCtx=rows.filter(r=>Math.abs(r.arsLed-r.arsOwe)>0.005||Math.abs(r.usdLed-r.usdOwe)>0.005).length;
+  let tbl=`<div class="kpis" style="margin-bottom:18px">
+    <div class="kpi"><div class="lab">↹ Préstamos registrados</div><div class="num mono">${loans.length}</div><div class="meta">históricos, todas las cajas</div></div>
+    <div class="kpi"><div class="lab">Movido en $</div><div class="num mono">${pesoCur(Math.round(totArs),'ARS')}</div><div class="meta">suma bruta histórica</div></div>
+    <div class="kpi"><div class="lab">Movido en US$</div><div class="num mono">${pesoCur(Math.round(totUsd),'USD')}</div><div class="meta">suma bruta histórica</div></div>
+    <div class="kpi acc"><div class="lab">Empresas con saldo pendiente</div><div class="num mono">${pendCtx}</div><div class="meta">de ${contexts.length} en total</div></div>
+  </div>`;
+  tbl+='<div style="overflow-x:auto"><table><thead><tr><th class="l">Empresa / Proyecto</th><th>Le deben $</th><th>Debe $</th><th>Neto $</th><th>Le deben US$</th><th>Debe US$</th><th>Neto US$</th><th>Préstamos</th></tr></thead><tbody>';
+  tbl+=rows.map(r=>{
+    const arsNet=r.arsLed-r.arsOwe,usdNet=r.usdLed-r.usdOwe;
+    return `<tr onclick="openLoanDetail('${r.c.id}')" title="Ver detalle">
+      <td class="l">${esc(ctxLabel(r.c))}</td>
+      <td class="pos">${r.arsLed>0.005?pesoCur(Math.round(r.arsLed),'ARS'):'—'}</td>
+      <td class="neg">${r.arsOwe>0.005?pesoCur(Math.round(r.arsOwe),'ARS'):'—'}</td>
+      <td style="font-weight:700" class="${arsNet>=0?'pos':'neg'}">${Math.abs(arsNet)>0.005?pesoCurS(arsNet,'ARS'):'—'}</td>
+      <td class="pos">${r.usdLed>0.005?pesoCur(Math.round(r.usdLed),'USD'):'—'}</td>
+      <td class="neg">${r.usdOwe>0.005?pesoCur(Math.round(r.usdOwe),'USD'):'—'}</td>
+      <td style="font-weight:700" class="${usdNet>=0?'pos':'neg'}">${Math.abs(usdNet)>0.005?pesoCurS(usdNet,'USD'):'—'}</td>
+      <td>${r.nLoans}</td>
+    </tr>`;
+  }).join('');
+  tbl+='</tbody></table></div><p class="note">Tocá una fila para ver la cuenta corriente contra cada contraparte.</p>';
+  el.innerHTML=tbl;
+}
+// Crédito vs. efectivo: para cada caja con al menos un arqueo cargado, compara
+// el último "caja real" contado (fis) contra el saldo de créditos a cobrar
+// (cred) de ese mismo día — para ver qué proporción del saldo es efectivo
+// contante vs. crédito pendiente de cobro.
+function renderCreditCashRatio(){
+  const el=document.getElementById('creditCashRatio');if(!el)return;
+  const rows=[];
+  contexts.forEach(c=>{
+    ['ARS','USD'].forEach(cur=>{
+      const withFis=ctxRealDays(c.id,cur).filter(d=>d.fis!=null);
+      if(!withFis.length)return;
+      const d=withFis[withFis.length-1];
+      const fis=d.fis||0,cred=Math.max(0,d.cred||0),tot=fis+cred;
+      if(tot<=0.005)return;
+      rows.push({label:ctxLabel(c)+' · '+CUR_SYM[cur],pctCred:Math.round(cred/tot*100),fis,cred,cur,date:d.date});
+    });
+  });
+  if(!rows.length){el.innerHTML='<div class="empty-state">Todavía no cargaste el conteo de "caja real" (arqueo) en ninguna caja</div>';return}
+  rows.sort((a,b)=>b.pctCred-a.pctCred);
+  el.innerHTML='<div class="bars">'+rows.map(r=>`<div class="bar-row" style="grid-template-columns:190px 1fr auto" title="${esc(r.label)} · ${r.date} · Efectivo ${pesoCur(Math.round(r.fis),r.cur)} · Crédito ${pesoCur(Math.round(r.cred),r.cur)}">
+      <div class="nm">${esc(r.label)}</div>
+      <div class="bar-track" style="display:flex">
+        <div style="width:${100-r.pctCred}%;height:100%;background:linear-gradient(90deg,#1f5a7a,var(--blue))"></div>
+        <div style="width:${r.pctCred}%;height:100%;background:linear-gradient(90deg,#b45309,#f0a020)"></div>
+      </div>
+      <div class="val mono">${r.pctCred}% crédito</div>
+    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:#f0a020">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja.</p>';
+}
 function renderAnalytics(){
+  renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();
   const avgDay=totMov/(real.length||1);
   const bigDay=real.length?real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0]:null;
   document.getElementById('anaKpis').innerHTML=`
@@ -1210,6 +1374,29 @@ function cascadeChain(ctxId,cur,ud){
     }
   });
   return ud;
+}
+// Días reales (no vacíos, ordenados cronológicamente) de UNA caja cualquiera
+// (no necesariamente la activa) — para tarjetas/alarmas que agregan datos de
+// TODAS las empresas/proyectos y monedas a la vez. loadUserDaysFor() siempre
+// relee de localStorage, así que esto nunca pisa el estado de la caja activa.
+function ctxRealDays(ctxId,cur){
+  const ud=loadUserDaysFor(ctxId,cur);
+  cascadeChain(ctxId,cur,ud);
+  const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
+  return Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+}
+// Alarma de diferencia de caja grande: recorre TODAS las empresas/proyectos y
+// monedas (no solo la caja activa) usando el mismo umbral que isWarn(), y
+// devuelve el descuadre más reciente de cada caja que tenga alguno pendiente.
+function computeGlobalWarnings(){
+  const out=[];
+  contexts.forEach(c=>{
+    ['ARS','USD'].forEach(cur=>{
+      const warns=ctxRealDays(c.id,cur).filter(isWarn);
+      if(warns.length)out.push({ctx:c,cur,worst:warns[warns.length-1],count:warns.length});
+    });
+  });
+  return out;
 }
 function applyLoanMovement(ctxId,cur,iso,imp,cpt,ref){
   const ud=loadUserDaysFor(ctxId,cur);
@@ -1431,7 +1618,7 @@ document.getElementById('loanSubmit').onclick=()=>{
   }
   registerLoan(fromCtx,toCtx,cur,amt,note,iso);
   document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
-  renderLoans();
+  renderLoans();renderAll();
   toast('Préstamo registrado: '+ctxLabel(fromCtx)+' → '+ctxLabel(toCtx));
 };
 
