@@ -351,6 +351,7 @@ tbody tr:hover{background:#f1f3f4}
         <button class="ctxicon" id="ctxProyectoEdit" title="Renombrar proyecto">✎</button>
         <button class="ctxicon" id="ctxProyectoDel" title="Eliminar proyecto">🗑</button>
       </div>
+      <div id="ctxLoanBadge"></div>
     </div>
     <div class="nav-label">Caja</div>
     <div class="seg" id="cajaSeg">
@@ -507,6 +508,10 @@ tbody tr:hover{background:#f1f3f4}
           <button class="btn-primary" id="loanSubmit" style="margin-top:16px">⇄ Registrar préstamo</button>
         </div>
         <div class="panel" style="margin-top:18px">
+          <div class="ph"><div><h3>Resumen por empresa / proyecto</h3><p>Saldo de cuenta corriente de préstamos de cada una (le deben / debe), sumando todas las contrapartes</p></div></div>
+          <div id="loanSummary"></div>
+        </div>
+        <div class="panel" style="margin-top:18px">
           <div class="ph"><div><h3>Saldos entre empresas / proyectos</h3><p>Neto de préstamos no saldados por par y moneda</p></div></div>
           <div id="loanBalances"></div>
         </div>
@@ -609,6 +614,33 @@ function renderCtxSelectors(){
   const pSel=document.getElementById('ctxProyectoSel');
   const proyectos=contexts.filter(c=>c.empresa===cur.empresa);
   pSel.innerHTML=proyectos.map(c=>`<option value="${c.id}" ${c.id===cur.id?'selected':''}>${esc(c.proyecto)}</option>`).join('')+'<option value="__new__">＋ Nuevo proyecto…</option>';
+  renderCtxLoanBadge();
+}
+// Saldo neto de préstamos de un contexto en una moneda: positivo = le deben,
+// negativo = debe. Suma todos los préstamos donde participa, sea cual sea la
+// contraparte (a diferencia de renderLoanBalances, que es por par).
+function ctxLoanNet(ctxId,cur){
+  let net=0;
+  loans.forEach(l=>{
+    if(l.cur!==cur)return;
+    if(l.from.id===ctxId)net+=l.amount; // prestó (dio plata) => le deben
+    if(l.to.id===ctxId)net-=l.amount; // recibió el préstamo => debe
+  });
+  return Math.round(net*100)/100;
+}
+function loanNetLine(ctxId,cur,cls){
+  const net=ctxLoanNet(ctxId,cur);
+  if(Math.abs(net)<0.005)return null;
+  const sym=CUR_SYM[cur];
+  return net>0
+    ?`<span class="${cls||''} pos">Le deben ${sym} ${fmtAR.format(Math.round(net))}</span>`
+    :`<span class="${cls||''} neg">Debe ${sym} ${fmtAR.format(Math.round(Math.abs(net)))}</span>`;
+}
+function renderCtxLoanBadge(){
+  const el=document.getElementById('ctxLoanBadge');if(!el)return;
+  const ctx=activeContext();
+  const parts=['ARS','USD'].map(cur=>loanNetLine(ctx.id,cur)).filter(Boolean);
+  el.innerHTML=parts.length?`<div style="font-size:12px;font-weight:600;display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:0 2px">${parts.join('')}</div>`:'';
 }
 function switchContext(id){
   activeContextId=id;
@@ -1228,6 +1260,15 @@ function renderLoanSelects(){
   if(!document.getElementById('loanDate').value)document.getElementById('loanDate').value=todayIso();
 }
 let loanFilterPair=null;
+function renderLoanSummary(){
+  const el=document.getElementById('loanSummary');if(!el)return;
+  const rows=contexts.map(c=>({c,parts:['ARS','USD'].map(cur=>loanNetLine(c.id,cur,'mono')).filter(Boolean)})).filter(r=>r.parts.length);
+  if(!rows.length){el.innerHTML='<div class="empty-state"><div class="big">✓</div>Ninguna empresa/proyecto tiene préstamos pendientes</div>';return}
+  el.innerHTML='<div class="bars">'+rows.map(r=>`<div class="bar-row" style="grid-template-columns:1fr auto;cursor:default">
+      <div class="nm">${esc(ctxLabel(r.c))}</div>
+      <div style="display:flex;flex-direction:column;gap:2px;text-align:right;font-weight:600">${r.parts.join('')}</div>
+    </div>`).join('')+'</div>';
+}
 function renderLoanBalances(){
   const pairs={};
   loans.forEach(l=>{
@@ -1295,7 +1336,7 @@ function renderLoanTable(){
   const emptyMsg=loanFilterPair?'Sin movimientos registrados entre este par':'Todavía no registraste préstamos';
   document.getElementById('loanTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th class="l">Origen</th><th class="l">Destino</th><th>Importe</th>${showRunning?'<th>Saldo acumulado</th>':''}<th class="l">Nota</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan=${showRunning?7:6} class=l style="text-align:center;color:var(--ink3);padding:24px">${emptyMsg}</td></tr>`}</tbody>`;
 }
-function renderLoans(){renderLoanSelects();renderLoanBalances();renderLoanTable()}
+function renderLoans(){renderLoanSelects();renderLoanSummary();renderLoanBalances();renderLoanTable();renderCtxLoanBadge()}
 document.getElementById('loanSubmit').onclick=()=>{
   const errEl=document.getElementById('loanErr');errEl.textContent='';
   const fromId=document.getElementById('loanFrom').value,toId=document.getElementById('loanTo').value;
