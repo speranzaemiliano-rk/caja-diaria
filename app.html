@@ -186,7 +186,7 @@ tbody tr:last-child td{border-bottom:none}
 .dk{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
 .dk b{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);font-weight:600}
 .dk .dv{font-size:17px;font-weight:700;font-family:'Roboto Mono';margin-top:4px}
-.mvs{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:20px}
+.mvs{border:1px solid var(--line);border-radius:12px;overflow:auto;margin-bottom:20px}
 .ctrl{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .ctrlbox{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
 .ctrlbox h4{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--gold2);margin-bottom:12px;font-weight:600}
@@ -211,8 +211,10 @@ tbody tr:last-child td{border-bottom:none}
 .hl{color:var(--gold2);font-weight:600}
 @media(max-width:1000px){
   .app{grid-template-columns:1fr}
-  .side{position:fixed;left:-260px;transition:.3s;box-shadow:var(--shadow)}
+  .side{position:fixed;top:0;left:-280px;width:280px;max-width:82vw;transition:.3s;box-shadow:var(--shadow);z-index:50;overflow-y:auto}
   .side.show{left:0}
+  .side-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40}
+  .side-scrim.show{display:block}
   .grid2,.grid2.rev{grid-template-columns:1fr}
   .dkpis{grid-template-columns:repeat(2,1fr)}
   .ctrl{grid-template-columns:1fr}
@@ -266,9 +268,21 @@ tbody tr:last-child td{border-bottom:none}
 .errline{color:var(--red);font-size:12.5px;font-weight:600}
 @media(max-width:760px){
   .fgrid{grid-template-columns:1fr 1fr}
+  /* El préstamo entre empresas y el cambio de divisa arman su grilla con
+     grid-template-columns inline (según cuántos campos entran) — un inline
+     style le gana a esta media query, así que hace falta !important acá para
+     que también se apilen en pantallas chicas. */
+  .loanbox .fgrid,#v-loans .fgrid{grid-template-columns:1fr!important}
   .mvhead{display:none}
   .mvrow{grid-template-columns:1fr 1fr;gap:8px}
   .mvrow .rmrow{grid-column:2}
+  /* La fila de ajuste de crédito arma su propia grilla de 4 columnas (toggle,
+     nota, importe, quitar) con estilo inline — se apila igual que un
+     movimiento normal, en 2x2. */
+  #credMvList .mvrow{grid-template-columns:1fr 1fr!important}
+  /* Fecha / Saldo inicial / Día del encabezado del editor: 3 columnas apretadas
+     (el importe queda con muy poco espacio) — se apilan en pantallas chicas. */
+  #edHeadGrid{grid-template-columns:1fr!important}
   .ed-summary{grid-template-columns:1fr 1fr}
 }
 
@@ -334,6 +348,7 @@ tbody tr:hover{background:#f1f3f4}
 </head>
 <body>
 <div class="app">
+  <div class="side-scrim" id="sideScrim"></div>
   <aside class="side" id="side">
     <a class="brand" href="./" title="Volver a la portada" style="text-decoration:none;color:inherit">
       <div class="mark">💵</div>
@@ -373,7 +388,7 @@ tbody tr:hover{background:#f1f3f4}
 
   <div class="main">
     <div class="topbar">
-      <button class="menu-toggle" onclick="document.getElementById('side').classList.toggle('show')">☰</button>
+      <button class="menu-toggle" onclick="toggleSideMenu()">☰</button>
       <div>
         <h2 id="vTitle">Resumen ejecutivo</h2>
         <div class="sub" id="vSub">Estado consolidado de la caja</div>
@@ -732,6 +747,9 @@ document.getElementById('ctxProyectoDel').onclick=()=>{
 };
 
 /* ============ navigation ============ */
+function toggleSideMenu(){document.getElementById('side').classList.toggle('show');document.getElementById('sideScrim').classList.toggle('show')}
+function closeSideMenu(){document.getElementById('side').classList.remove('show');document.getElementById('sideScrim').classList.remove('show')}
+document.getElementById('sideScrim').onclick=closeSideMenu;
 const TITLES={dash:['Resumen ejecutivo','Estado consolidado de la caja'],index:['Movimientos diarios','Registro día por día agrupado por mes'],analytics:['Análisis','Tendencias, conceptos y desempeño mensual'],search:['Buscar movimientos','Explorá todos los asientos individuales'],loans:['Préstamos','Transferencias entre empresas y proyectos']};
 let currentView='dash';
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
@@ -742,7 +760,7 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
   document.getElementById('v-'+currentView).classList.add('on');
   document.getElementById('vTitle').textContent=TITLES[currentView][0];
   document.getElementById('vSub').textContent=TITLES[currentView][1];
-  document.getElementById('side').classList.remove('show');
+  closeSideMenu();
   if(currentView==='dash')drawLine(currentRange);
   if(currentView==='loans')renderLoans();
 });
@@ -976,7 +994,7 @@ function renderIndex(){
           <div class="mstats"><div><b>Ingresos</b><span class="pos">${peso(mIng)}</span></div><div><b>Egresos</b><span class="neg">${pesoS(mEgr)}</span></div><div><b>Cierre</b><span style="color:var(--gold2)">${peso(ds[ds.length-1].sf)}</span></div></div>
         </div>
         <div class="mbody" style="max-height:${isOpen?'9999px':'0'}">
-          <table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Mov.</th><th class="l">Estado</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table>
+          <div style="overflow-x:auto"><table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Mov.</th><th class="l">Estado</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div>
         </div></div>`);
   });
   if(!shown)cont.innerHTML='<div class="empty-state"><div class="big">⌕</div>Sin resultados para los filtros aplicados</div>';
@@ -1396,7 +1414,7 @@ function openEditor(existing){
       <div><h3>${existing?'Editar día':'Nuevo día'} <span class="flag ${CUR==='ARS'?'ok':'user'}" style="vertical-align:middle">Caja ${symLabel}</span></h3><div class="es">Cargá los movimientos del día — el saldo final se calcula solo. Si no hubo movimientos, guardalo igual y arrastra el saldo.</div></div>
       <button class="mclose" style="margin-left:auto" onclick="closeEditor()">✕</button></div>
     <div class="ed-body">
-      <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="fgrid" id="edHeadGrid" style="grid-template-columns:1fr 1fr 1fr">
         <div class="field"><label>Fecha</label><input type="date" id="f_date" value="${m.iso}" ${existing?'disabled':''}></div>
         <div class="field"><label>Saldo inicial (${symLabel})</label><input class="amt" id="f_si" value="${m.si}"></div>
         <div class="field"><label>Día</label><input id="f_wd" value="${wdOf(m.iso)}" disabled class="ro"></div>
