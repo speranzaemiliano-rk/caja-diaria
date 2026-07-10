@@ -1,14 +1,18 @@
 {
+  "id": "/caja-diaria/",
   "name": "Caja Diaria",
   "short_name": "Caja Diaria",
   "description": "Control de caja diario · Movimientos, análisis y control por empresa y proyecto",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
+  "dir": "ltr",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "lang": "es-AR",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
       "src": "icon-192.png",
@@ -33,6 +37,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-1.png",
+      "sizes": "824x1830",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Resumen del día con saldo, ingresos y egresos"
+    },
+    {
+      "src": "screenshot-2.png",
+      "sizes": "824x1830",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Detalle del día y arqueo de caja"
     }
   ]
 }
