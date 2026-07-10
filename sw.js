@@ -1,5 +1,5 @@
-const CACHE = 'caja-diaria-v26';
-const ASSETS = ['./', './index.html', './app.html', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'caja-diaria-v27';
+const ASSETS = ['./', './index.html', './app.html', './manifest.json', './icon-192.png', './icon-512.png', './biletes.avif'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
