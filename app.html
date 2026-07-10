@@ -186,10 +186,12 @@ tbody tr:last-child td{border-bottom:none}
 .warnbanner .wt{flex:1;min-width:0}
 .warnbanner .wt h4{font-family:'Roboto';font-size:14.5px;font-weight:700;color:var(--red);margin-bottom:8px}
 .warnitems{display:flex;flex-direction:column;gap:6px}
-.warnitem{display:flex;justify-content:space-between;gap:14px;align-items:center;font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 12px;cursor:pointer;transition:.15s}
+.warnitem{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px 16px;align-items:center;font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 12px;cursor:pointer;transition:.15s}
 .warnitem:hover{border-color:var(--red);background:var(--red-bg)}
 .warnitem .wn{color:var(--ink2)}
-.warnitem .wv{font-family:'Roboto Mono';font-weight:700;color:var(--red);white-space:nowrap}
+.warnitem .wnums{display:flex;gap:16px;font-size:12px;color:var(--ink3);font-family:'Roboto Mono'}
+.warnitem .wnums b{color:var(--ink);font-weight:600}
+.warnitem .wv{font-family:'Roboto Mono';font-weight:700;color:var(--red);white-space:nowrap;margin-left:auto}
 
 /* detail modal */
 .overlay{position:fixed;inset:0;background:rgba(5,8,12,.7);backdrop-filter:blur(5px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto}
@@ -901,10 +903,18 @@ function renderWarnBanner(){
   const items=computeGlobalWarnings();
   if(!items.length){el.innerHTML='';return}
   items.sort((a,b)=>a.worst.iso<b.worst.iso?1:-1);
-  const rows=items.map(it=>`<div class="warnitem" onclick="jumpToCaja('${it.ctx.id}','${it.cur}','${it.worst.iso}')" title="Ver el día">
+  // Mismos rótulos que el modal de detalle del día (openDay): "Saldo según
+  // movimientos" (lo que dice el sistema) vs "Saldo final (caja + créditos)"
+  // (lo contado en la realidad) — para que el cartel no muestre solo el
+  // número de la diferencia, sino de dónde sale (pedido del usuario).
+  const rows=items.map(it=>{
+    const sistema=it.worst.sf,real=Math.round(((it.worst.fis||0)+(it.worst.cred||0))*100)/100;
+    return `<div class="warnitem" onclick="jumpToCaja('${it.ctx.id}','${it.cur}','${it.worst.iso}')" title="Ver el día">
       <span class="wn">${esc(ctxLabel(it.ctx))} · ${it.cur==='ARS'?'$ Pesos':'US$ Dólares'} · ${it.worst.date}</span>
-      <span class="wv">${pesoCur(it.worst.dif,it.cur)}</span>
-    </div>`).join('');
+      <span class="wnums"><span>Según sistema <b>${pesoCur(sistema,it.cur)}</b></span><span>Caja real <b>${pesoCur(real,it.cur)}</b></span></span>
+      <span class="wv">Diferencia ${pesoCur(it.worst.dif,it.cur)}</span>
+    </div>`;
+  }).join('');
   el.innerHTML=`<div class="warnbanner"><div class="wi">⚠️</div><div class="wt">
       <h4>Diferencia de caja en el último día de ${items.length} caja(s)</h4>
       <div class="warnitems">${rows}</div>
