@@ -8,7 +8,7 @@ Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | **La portada** (landing, página aparte): estilo **Google-clean** (blanco, azul `#1a73e8`, Roboto), con preview de la caja y botón "Abrir mi caja" → `app.html`. Registra el SW. NO tiene la app embebida. |
+| `index.html` | **La portada** (landing, página aparte): estilo **editorial oscuro** (fondo casi negro `#0a0b0d`, tipografía serif **Fraunces** en títulos + Inter/Roboto Mono, acento azul `#6aa5ff`) inspirado en una infografía tipo revista. El hero tiene un **medio-anillo metálico** (SVG, generado por JS en el `<script>` final: `#donut`, rampa de acero `--s1..--s5` oscuro→claro por magnitud) mostrando la "Composición de ingresos · ejemplo de un mes" con líneas guía a cada etiqueta (%, monto) y el total al centro, más un sello serif "Caja · Diaria". Botón "Abrir mi caja" → `app.html`. Registra el SW. NO tiene la app embebida. (Antes era Google-clean claro; se rehizo a pedido del usuario tomando el estilo de una imagen de referencia.) |
 | `app.html` | **La caja** (la app): "Control de Caja Diario · Movimientos". Reestilizada a **Google-clean claro** (blanco/gris `#f8f9fa`, azul `#1a73e8`, verde `#188038`/rojo `#d93025`, Roboto + Roboto Mono). El reskin se hizo cambiando `:root` + un bloque de overrides al final del `<style>` (conservando toda la estructura/JS). El logo del sidebar (`a.brand`) vuelve a la portada. |
 | `manifest.json` | PWA. `start_url: "./"` → la app instalada abre la **portada**. `scope: "./"`. Splash blanco (`#ffffff`). |
 | `sw.js` | Service worker. Cachea `./`, `index.html`, `app.html`, manifest e íconos. **Al tocar HTML, subí `CACHE` (`caja-diaria-vN`)** para purgar la caché vieja. |
