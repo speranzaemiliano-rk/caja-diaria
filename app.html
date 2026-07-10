@@ -46,6 +46,11 @@ body{
 
 /* layout */
 .app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+/* Scrim del menú móvil: OCULTO por defecto (clave — si no, en desktop se mete
+   como celda del grid y empuja el sidebar sobre el contenido). Solo aparece al
+   abrir el menú en pantallas chicas. */
+.side-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40}
+.side-scrim.show{display:block}
 .side{
   background:linear-gradient(180deg,var(--bg2),var(--bg));
   border-right:1px solid var(--line);
@@ -213,8 +218,9 @@ tbody tr:last-child td{border-bottom:none}
   .app{grid-template-columns:1fr}
   .side{position:fixed;top:0;left:-280px;width:280px;max-width:82vw;transition:.3s;box-shadow:var(--shadow);z-index:50;overflow-y:auto}
   .side.show{left:0}
-  .side-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40}
-  .side-scrim.show{display:block}
+  /* En el celu el encabezado NO queda fijo: se corre con el scroll para dejar
+     lugar al contenido (a pedido — la barra fija arriba molestaba). */
+  .topbar{position:static;padding:14px 18px}
   .grid2,.grid2.rev{grid-template-columns:1fr}
   .dkpis{grid-template-columns:repeat(2,1fr)}
   .ctrl{grid-template-columns:1fr}
