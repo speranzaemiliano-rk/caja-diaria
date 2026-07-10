@@ -1835,7 +1835,53 @@ function maybeAutoBackup(){
 }
 
 /* --- panel de configuración (modal, con guía adentro) --- */
-const APPS_SCRIPT_CODE='function doPost(e){\n  var d = JSON.parse(e.postData.contents);\n  GmailApp.sendEmail(d.to, d.subject, d.message, {\n    attachments: [Utilities.newBlob(d.content, "application/json", d.filename)]\n  });\n  return ContentService.createTextOutput("ok");\n}';
+// Genera el código de Apps Script con los datos reales ya cargados (config de
+// Firebase, código de sync, email de respaldo) para que sea copiar-y-pegar.
+// Incluye doPost (recibe el respaldo que empuja el navegador al abrir la app)
+// y dailyBackup (lee la nube directo por HTTP con un disparador diario de Apps
+// Script — corre solo en el servidor de Google, sin depender de abrir la app).
+function appsScriptCode(email){
+  const cfg=syncCfg()||DEFAULT_FIREBASE_CONFIG;
+  const code=syncCode()||DEFAULT_SYNC_CODE;
+  const em=(email||localStorage.getItem(BACKUP_EMAIL_KEY)||'').trim()||'tu@email.com';
+  return [
+    'function doPost(e){',
+    '  var d = JSON.parse(e.postData.contents);',
+    '  GmailApp.sendEmail(d.to, d.subject, d.message, {',
+    '    attachments: [Utilities.newBlob(d.content, "application/json", d.filename)]',
+    '  });',
+    '  return ContentService.createTextOutput("ok");',
+    '}',
+    '',
+    '// ---- Respaldo diario automático: corre solo en el servidor de Google, no',
+    '// depende de que abras la app. Requiere agregar un disparador (ver guía). ----',
+    'var FIREBASE_API_KEY = '+JSON.stringify(cfg.apiKey)+';',
+    'var FIREBASE_PROJECT_ID = '+JSON.stringify(cfg.projectId)+';',
+    'var SYNC_CODE = '+JSON.stringify(code)+';',
+    'var BACKUP_EMAIL = '+JSON.stringify(em)+';',
+    '',
+    'function dailyBackup(){',
+    '  var authRes = UrlFetchApp.fetch(',
+    '    "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + FIREBASE_API_KEY,',
+    '    {method:"post",contentType:"application/json",payload:JSON.stringify({returnSecureToken:true})}',
+    '  );',
+    '  var idToken = JSON.parse(authRes.getContentText()).idToken;',
+    '',
+    '  var docUrl = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID +',
+    '    "/databases/(default)/documents/cajas/" + encodeURIComponent(SYNC_CODE);',
+    '  var docRes = UrlFetchApp.fetch(docUrl, {headers:{Authorization:"Bearer "+idToken}});',
+    '  var doc = JSON.parse(docRes.getContentText());',
+    '  var json = doc.fields && doc.fields.backupJson && doc.fields.backupJson.stringValue;',
+    '  if (!json) throw new Error("No se encontró backupJson en el documento de la nube.");',
+    '',
+    '  var today = new Date().toISOString().slice(0,10);',
+    '  GmailApp.sendEmail(BACKUP_EMAIL, "Respaldo diario · Caja Diaria · " + today,',
+    '    "Respaldo automático (servidor) del " + today + ". Adjunto: respaldo_completo_" + today + ".json — se puede volver a cargar en la app con Respaldo → Importar.",',
+    '    {attachments:[Utilities.newBlob(json, "application/json", "respaldo_completo_"+today+".json")]}',
+    '  );',
+    '}'
+  ].join('\n');
+}
 function openBackupSettings(){
   const email=localStorage.getItem(BACKUP_EMAIL_KEY)||'';
   const enabled=localStorage.getItem(BACKUP_ENABLED_KEY)!=='0';
@@ -1863,14 +1909,24 @@ function openBackupSettings(){
             <li>Entrá a <b>script.google.com</b> → <b>Proyecto nuevo</b>.</li>
             <li>Borrá lo que haya, pegá este código (botón <b>Copiar</b>) y guardá (💾).</li>
             <li><b>Implementar → Nueva implementación</b> → tipo <b>Aplicación web</b>.</li>
-            <li>“Ejecutar como”: <b>Yo</b>. “Quién tiene acceso”: <b>Cualquiera</b>.</li>
+            <li>“Ejecutar como”: <b>Yo</b>. “Quién tiene acceso”: <b>Cualquiera</b> (si dejás "Solo yo" el envío falla en silencio).</li>
             <li><b>Implementar</b> → autorizá con tu cuenta de Google → copiá la <b>URL</b> (termina en <b>/exec</b>).</li>
             <li>Pegá esa URL arriba → <b>Guardar</b> → <b>Probar envío ahora</b> y fijate que te llegue el mail.</li>
           </ol>
           <div style="position:relative;margin-top:10px">
             <button class="btn-ghost" id="bk_copy" type="button" style="position:absolute;top:6px;right:6px;padding:5px 10px;font-size:12px">Copiar</button>
-            <pre id="bk_code" style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre;margin:0">${esc(APPS_SCRIPT_CODE)}</pre>
+            <pre id="bk_code" style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre;margin:0">${esc(appsScriptCode(email))}</pre>
           </div>
+        </details>
+        <details style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 14px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">Que salga solo aunque no abras la app (recomendado)</summary>
+          <p style="margin:10px 0;font-size:13.5px;line-height:1.6;color:var(--ink2)">El código de arriba ya incluye <code>dailyBackup</code>, una función que lee tu caja directo de la nube y manda el mail — corre en el servidor de Google, <b>no depende de que abras la app ese día</b>. Solo falta decirle a Google cuándo ejecutarla:</p>
+          <ol style="margin:0 0 0 18px;font-size:13.5px;line-height:1.7;color:var(--ink2)">
+            <li>En <b>script.google.com</b>, con el mismo proyecto abierto, tocá el ícono del <b>reloj (⏰ Activadores)</b> en el menú de la izquierda.</li>
+            <li><b>+ Añadir activador</b> → función a ejecutar: <b>dailyBackup</b>.</li>
+            <li>Origen del evento: <b>Basado en tiempo</b> → tipo: <b>Temporizador de día</b> → elegí un horario (ej. de 6 a 7 AM).</li>
+            <li><b>Guardar</b> → autorizá si te lo pide. Listo: a partir de ahora te va a llegar el mail todos los días a esa hora, hayas abierto la app o no.</li>
+          </ol>
         </details>
       </div>
       <div id="bk_ejs" style="margin-top:14px;display:none">
@@ -1899,7 +1955,8 @@ function openBackupSettings(){
   };
   document.querySelectorAll('#bk_methods button').forEach(b=>b.onclick=()=>setMethod(b.dataset.m));
   setMethod(method);
-  document.getElementById('bk_copy').onclick=()=>{navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>toast('Código copiado')).catch(()=>{const p=document.getElementById('bk_code');const r=document.createRange();r.selectNodeContents(p);const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Seleccioná y copiá (Ctrl+C)')})};
+  document.getElementById('bk_email').addEventListener('input',e=>{const p=document.getElementById('bk_code');if(p)p.textContent=appsScriptCode(e.target.value)});
+  document.getElementById('bk_copy').onclick=()=>{const code=appsScriptCode(document.getElementById('bk_email').value);navigator.clipboard.writeText(code).then(()=>toast('Código copiado')).catch(()=>{const p=document.getElementById('bk_code');const r=document.createRange();r.selectNodeContents(p);const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Seleccioná y copiá (Ctrl+C)')})};
   function readInputs(){
     const em=(document.getElementById('bk_email').value||'').trim();
     try{
@@ -2047,7 +2104,15 @@ function loadFirebase(){
   return ['firebase-app-compat.js','firebase-auth-compat.js','firebase-firestore-compat.js']
     .reduce((p,f)=>p.then(()=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=base+f;s.onload=res;s.onerror=()=>rej(new Error('no se pudo cargar Firebase (¿sin internet?)'));document.head.appendChild(s)})),Promise.resolve());
 }
-function cloudPayload(){const p=fullBackupPayload();p.updatedBy=deviceId();p.updatedAt=Date.now();return p}
+function cloudPayload(){
+  const raw=fullBackupPayload();
+  const p={...raw,updatedBy:deviceId(),updatedAt:Date.now()};
+  // Copia plana del respaldo como string: así un script del lado del servidor
+  // (Google Apps Script con un disparador diario) puede leerlo por HTTP sin
+  // tener que interpretar el formato de campos tipados de Firestore.
+  p.backupJson=JSON.stringify(raw);
+  return p;
+}
 function applyRemote(d){
   _applyingRemote=true;
   try{
@@ -2076,7 +2141,14 @@ function startSync(){
     _db=firebase.firestore();
     const ref=_db.collection('cajas').doc(syncCode());
     return ref.get().then(snap=>{
-      if(snap.exists){applyRemote(snap.data());_syncReady=true}
+      if(snap.exists){
+        const remote=snap.data();
+        applyRemote(remote);_syncReady=true;
+        // Backfill: si el documento es de antes de que existiera backupJson
+        // (lo usa el respaldo diario automático del lado del servidor), lo
+        // empujamos una vez para completarlo, sin esperar a que cambies algo.
+        if(remote.backupJson==null)schedulePush();
+      }
       else{_syncReady=true;ref.set(cloudPayload())}
       if(_unsub)_unsub();
       _unsub=ref.onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data();if(d.updatedBy===deviceId())return;applyRemote(d);toast('Caja actualizada desde otro dispositivo')},err=>{setSyncBadge('Sync con error: '+(err&&err.message||err))});
