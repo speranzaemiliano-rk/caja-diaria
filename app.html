@@ -1977,7 +1977,10 @@ function deleteMov(iso,idx){
   saveUser();closeModal();renderAll();toast('Movimiento eliminado');
 }
 function closeEditor(){document.getElementById('edOverlay').classList.remove('on');if(!document.getElementById('overlay').classList.contains('on'))document.body.style.overflow=''}
-document.getElementById('edOverlay').onclick=e=>{if(e.target.id==='edOverlay')closeEditor()};
+// A propósito NO se cierra al clickear afuera del editor (a diferencia del
+// modal de detalle #overlay): cargar un día/movimiento lleva rato y un click
+// afuera por error no debe tirar todo lo tipeado — para salir están la ✕ y
+// "Cancelar" de adentro del editor, o Escape.
 document.getElementById('newDayBtn').onclick=()=>openEditor(null);
 
 /* ============ toast ============ */
