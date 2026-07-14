@@ -22,6 +22,7 @@ Control de caja diaria para comercios (kioscos, locales, freelancers): registrá
 - **Cambio de divisa** — compra/venta de dólares dentro de la misma empresa, con cotización.
 - **Multi-empresa / multi-proyecto / multi-moneda** ($ y US$), cada combinación es su propia "caja".
 - **Alarma de diferencia de caja** — si el último día cargado de alguna empresa/proyecto quedó con un descuadre importante, aparece arriba de todo en cualquier pantalla, sin tener que ir a buscarla.
+- **Imprimir el resumen del día** — botón "🖨 Imprimir" en el Resumen o en el detalle de cualquier día: saldo inicial/final, movimientos y control de caja, listos para papel.
 - **Análisis** — resumen por empresa/proyecto (pesos, dólares y préstamos), informe detallado de préstamos, crédito vs. efectivo, y (colapsados) evolución del saldo, composición de ingresos/egresos, diferencias de caja, flujo mensual, principales conceptos, actividad por día de semana.
 - **Exportación a Excel** (`.xlsx` real, generado sin librerías) y **respaldo `.json`** (exportar/importar).
 - **Backup diario por email** — automático, con guía paso a paso para configurar el envío (Google Apps Script recomendado, corre del lado del servidor sin depender de abrir la app).

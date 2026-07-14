@@ -370,6 +370,17 @@ tbody tr:hover{background:#f1f3f4}
 .selbar b{font-family:'Roboto Mono',monospace;font-size:15px}
 .selbar .clr{margin-left:auto;background:none;border:none;color:var(--blue,#1a73e8);font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline}
 .selchk{width:34px;text-align:center!important}
+
+/* impresión: imprimir SOLO el modal de detalle del día abierto (resumen +
+   movimientos + control de caja) — printDay() lo abre y llama window.print() */
+@media print{
+  .app,.tip,.overlay:not(.on){display:none!important}
+  .overlay.on{position:static!important;background:none!important;backdrop-filter:none!important;padding:0!important;inset:auto!important;display:block!important;overflow:visible!important}
+  .overlay.on .modal,.overlay.on .editor{box-shadow:none!important;border:none!important;max-width:100%!important;width:100%!important;border-radius:0!important;animation:none!important}
+  .mclose,.mtop .btn-ghost{display:none!important}
+  .dkpis{grid-template-columns:repeat(4,1fr)!important}
+  a[href]::after{content:''}
+}
 </style>
 </head>
 <body>
@@ -439,6 +450,7 @@ tbody tr:hover{background:#f1f3f4}
             <div><h3 id="dayPanelTitle">Movimientos del día</h3><p id="dayPanelSub">—</p></div>
             <div style="display:flex;gap:10px">
               <button class="btn" id="daySelBtn" style="display:none">☑ Seleccionar</button>
+              <button class="btn" id="dayPrintBtn" style="display:none">🖨 Imprimir</button>
               <button class="btn" id="dayAddBtn" style="display:none">＋ Agregar movimiento</button>
               <button class="btn" id="dayEditBtn" style="display:none">✎ Editar día</button>
             </div>
@@ -964,16 +976,17 @@ function updateDaySelBar(){
 }
 function renderDayMovs(){
   const d=last;
-  const t=document.getElementById('dayPanelTitle'),s=document.getElementById('dayPanelSub'),el=document.getElementById('dayMovs'),eb=document.getElementById('dayEditBtn'),ab=document.getElementById('dayAddBtn'),qa=document.getElementById('dayQuickAdd'),sb=document.getElementById('daySelBtn');
+  const t=document.getElementById('dayPanelTitle'),s=document.getElementById('dayPanelSub'),el=document.getElementById('dayMovs'),eb=document.getElementById('dayEditBtn'),ab=document.getElementById('dayAddBtn'),qa=document.getElementById('dayQuickAdd'),sb=document.getElementById('daySelBtn'),pb=document.getElementById('dayPrintBtn');
   if(!t||!s||!el)return;
   if(qa){qa.style.display='none';qa.innerHTML=''}
   if(d&&d.iso!==_daySelIso){_daySelIso=d.iso;dayMovsSelecting=false;daySelSet=new Set()}
-  if(!d){t.textContent='Movimientos del día';s.textContent='Sin días registrados';el.innerHTML='<div class="empty-state"><div class="big">🧾</div>Todavía no cargaste ningún día en esta caja</div>';if(eb)eb.style.display='none';if(ab)ab.style.display='none';if(sb)sb.style.display='none';updateDaySelBar();return}
+  if(!d){t.textContent='Movimientos del día';s.textContent='Sin días registrados';el.innerHTML='<div class="empty-state"><div class="big">🧾</div>Todavía no cargaste ningún día en esta caja</div>';if(eb)eb.style.display='none';if(ab)ab.style.display='none';if(sb)sb.style.display='none';if(pb)pb.style.display='none';updateDaySelBar();return}
   t.textContent='Movimientos del día';
   s.textContent=d.date+' · '+d.wd+' · '+(d.nmov||0)+' movimiento(s)';
   const canEdit=d.src==='user';
   if(eb){if(canEdit){eb.style.display='';eb.onclick=()=>editDay(d.iso)}else{eb.style.display='none'}}
   if(ab){if(canEdit){ab.style.display='';ab.onclick=()=>openQuickAdd(d.iso)}else{ab.style.display='none'}}
+  if(pb){pb.style.display='';pb.onclick=()=>printDay(d.iso)}
   if(sb){if(d.movs.length){sb.style.display='';sb.className='btn'+(dayMovsSelecting?' on':'');sb.textContent=dayMovsSelecting?'✕ Cancelar selección':'☑ Seleccionar';sb.onclick=toggleDaySelMode}else{sb.style.display='none'}}
   if(!d.movs.length){el.innerHTML='<div class="empty-state">Este día no tuvo movimientos. El saldo final arrastra el inicial.</div>';updateDaySelBar();return}
   const sel=dayMovsSelecting;
@@ -1157,10 +1170,11 @@ function openDay(d){
   const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>'<span>'+peso(c)+'</span>').join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${peso(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
   const credDetail=d.credMovs&&d.credMovs.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Detalle de créditos del día</h4>${d.credMovs.map(cm=>`<div class="crow"><span>${esc(cm.note)||'<span style="color:var(--ink3)">(sin nombre)</span>'}</span><span class="${cm.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(cm.imp)}</span></div>`).join('')}</div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
+  const ctxInfo=esc(ctxLabel(activeContext()))+' · '+(CUR==='ARS'?'$ Pesos':'US$ Dólares');
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">${d.d}</div>
-      <div><h3>${d.date} ${d.src==='user'?'<span class="flag user" style="vertical-align:middle">agregado</span>':''}</h3><div class="msub">${d.wd} · ${MESES[d.m-1]} ${d.y} · ${d.nmov} movimiento(s)</div></div>
-      <div style="margin-left:auto;display:flex;gap:10px">${editBtn}<button class="mclose" onclick="closeModal()">✕</button></div></div>
+      <div><h3>${d.date} ${d.src==='user'?'<span class="flag user" style="vertical-align:middle">agregado</span>':''}</h3><div class="msub">${ctxInfo} · ${d.wd} · ${MESES[d.m-1]} ${d.y} · ${d.nmov} movimiento(s)</div></div>
+      <div style="margin-left:auto;display:flex;gap:10px">${editBtn}<button class="btn-ghost" onclick="printDay('${d.iso}')">🖨 Imprimir</button><button class="mclose" onclick="closeModal()">✕</button></div></div>
     <div class="mbody2">
       <div class="dkpis">
         <div class="dk"><b>Saldo inicial</b><div class="dv">${peso(d.si)}</div></div>
@@ -1183,6 +1197,15 @@ function openDay(d){
       </div>${caja}${credDetail}
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+// Imprime el resumen del día (saldo inicial/final, movimientos y control de
+// caja): abre/actualiza el modal de detalle de ese día y dispara el diálogo
+// de impresión del navegador — el CSS @media print oculta todo lo demás y
+// deja solo el modal, sin botones ni fondo.
+function printDay(iso){
+  const d=days.find(x=>x.iso===iso);if(!d)return;
+  openDay(d);
+  setTimeout(()=>window.print(),80);
 }
 function closeModal(){document.getElementById('overlay').classList.remove('on');if(!document.getElementById('edOverlay').classList.contains('on'))document.body.style.overflow=''}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal()};
