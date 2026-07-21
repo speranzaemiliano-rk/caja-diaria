@@ -1,4 +1,4 @@
-const CACHE = 'caja-diaria-v35';
+const CACHE = 'caja-diaria-v36';
 const ASSETS = ['./', './index.html', './app.html', './manifest.json', './icon-192.png', './icon-512.png', './biletes.avif'];
 
 self.addEventListener('install', e => {
@@ -18,9 +18,14 @@ self.addEventListener('fetch', e => {
   const isHTML = e.request.mode === 'navigate' || (e.request.headers.get('accept') || '').includes('text/html');
   if (isHTML) {
     // Red primero para el shell de la app: así los arreglos se ven apenas se recargue,
-    // en vez de quedar pegado a lo último cacheado. Cache solo como respaldo offline.
+    // en vez de quedar pegado a lo último cacheado. cache:'no-store' evita que la
+    // caché HTTP del navegador (GitHub Pages manda cache-control: max-age=600)
+    // devuelva una copia vieja sin siquiera llegar a la red — sin esto, recargar
+    // podía seguir mostrando la versión anterior hasta por 10 minutos después de
+    // un deploy, aunque el fetch() ya "pedía red primero". Cache solo como
+    // respaldo offline (ver más abajo, caches.match si falla la red).
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, { cache: 'no-store' }).then(res => {
         if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, copy));
