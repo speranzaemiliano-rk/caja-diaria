@@ -1725,7 +1725,7 @@ function openEditor(existing){
       <button class="mclose" style="margin-left:auto" onclick="closeEditor()">✕</button></div>
     <div class="ed-body">
       <div class="fgrid" id="edHeadGrid" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="field"><label>Fecha</label><input type="date" id="f_date" value="${m.iso}" ${existing?'disabled':''}></div>
+        <div class="field"><label>Fecha</label><input type="date" id="f_date" value="${m.iso}"></div>
         <div class="field"><label>Saldo inicial (${symLabel})</label><input class="amt" id="f_si" value="${m.si}"></div>
         <div class="field"><label>Día</label><input id="f_wd" value="${wdOf(m.iso)}" disabled class="ro"></div>
       </div>
