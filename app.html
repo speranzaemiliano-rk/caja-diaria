@@ -717,7 +717,8 @@ const ICON_SVG={
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   list:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/>',
   chart:'<path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 12L12 12L12 3"/>',
-  search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'
+  search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
 };
 const ic=(name,size)=>`<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0">${ICON_SVG[name]||''}</svg>`;
 const tip=document.getElementById('tip');
@@ -1272,7 +1273,6 @@ function openDay(d){
   const neto=(d.ing||0)+(d.egr||0);
   const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
   const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>`<span${c<0?' style="color:var(--red)"':''}>${pesoS(c)}</span>`).join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${pesoS(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
-  const credDetail=d.credMovs&&d.credMovs.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Detalle de créditos del día</h4>${d.credMovs.map(cm=>`<div class="crow"><span>${esc(cm.note)||'<span style="color:var(--ink3)">(sin nombre)</span>'}</span><span class="${cm.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(cm.imp)}</span></div>`).join('')}</div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
   const ctxInfo=esc(ctxLabel(activeContext()))+' · '+(CUR==='ARS'?'$ Pesos':'US$ Dólares');
   document.getElementById('modal').innerHTML=`
@@ -1295,10 +1295,10 @@ function openDay(d){
           <div class="crow"><span>Saldo según movimientos</span><span>${peso(d.sf)}</span></div>
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
-          <div class="crow"><span>Créditos a cobrar</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
+          <div class="crow"><span>Créditos a cobrar ${d.cred?`<button type="button" onclick="openCreditDetail()" style="margin-left:8px;background:none;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;vertical-align:1px" title="Ver quién forma este saldo (pide clave)">${ic('lock',11)} Ver</button>`:''}</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
           ${d.fis!=null?`<div class="crow" style="border-top:1px solid var(--line);padding-top:8px"><span>Saldo final (caja + créditos)</span><span style="font-weight:600">${peso(Math.round(((d.fis||0)+(d.cred||0))*100)/100)}</span></div>`:''}
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
-      </div>${caja}${credDetail}
+      </div>${caja}
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
@@ -1529,6 +1529,66 @@ function ctxRealDays(ctxId,cur){
   cascadeChain(ctxId,cur,ud);
   const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
   return Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+}
+/* ============ detalle de créditos a cobrar, protegido con clave ============
+   Pedido explícito del usuario: el desglose de "quién forma ese crédito" (los
+   conceptos/nombres cargados en cada ajuste) queda OCULTO por defecto — solo
+   se ve tocando un botón "Ver" que primero pide una clave local (guardada en
+   este navegador, no es una cuenta real: mismo nivel de seguridad que el
+   código de sync). Sin clave configurada, el primer toque la pide para crear. */
+const CREDIT_PIN_KEY='caja_credit_pin_v1';
+function creditPin(){return localStorage.getItem(CREDIT_PIN_KEY)||''}
+// Suma todos los credMovs (ajustes de crédito) de TODOS los días reales de la
+// caja activa, agrupados por nota ("de quién es") — el desglose acumulado que
+// arma el saldo total de "Créditos a cobrar", no solo el de un día puntual.
+function creditNotesBreakdown(ctxId,cur){
+  const acc={};
+  ctxRealDays(ctxId,cur).forEach(d=>(d.credMovs||[]).forEach(cm=>{
+    const key=(cm.note||'').trim()||'(sin nombre)';
+    acc[key]=Math.round(((acc[key]||0)+cm.imp)*100)/100;
+  }));
+  return Object.entries(acc).map(([note,total])=>({note,total})).filter(x=>Math.abs(x.total)>0.005).sort((a,b)=>b.total-a.total);
+}
+function openCreditDetail(){
+  const pin=creditPin();
+  if(!pin){
+    const setPin=(prompt('Todavía no configuraste una clave para ver el detalle de créditos.\n\nElegí una clave (mínimo 4 caracteres) para protegerlo:')||'').trim();
+    if(!setPin)return;
+    if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return}
+    try{localStorage.setItem(CREDIT_PIN_KEY,setPin)}catch(e){}
+    toast('Clave configurada · tocá "Ver" de nuevo para entrar');
+    return;
+  }
+  const entered=prompt('Clave para ver el detalle de créditos:');
+  if(entered==null)return;
+  if(entered!==pin){toast('Clave incorrecta');return}
+  renderCreditDetailModal();
+}
+function changeCreditPin(){
+  const setPin=(prompt('Nueva clave (mínimo 4 caracteres):')||'').trim();
+  if(!setPin)return;
+  if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return}
+  try{localStorage.setItem(CREDIT_PIN_KEY,setPin)}catch(e){}
+  toast('Clave actualizada');
+}
+function renderCreditDetailModal(){
+  const ctx=activeContext(),sym=CUR_SYM[CUR];
+  const items=creditNotesBreakdown(activeContextId,CUR);
+  const total=Math.round(items.reduce((s,x)=>s+x.total,0)*100)/100;
+  const body=items.length
+    ?items.map(x=>`<div class="crow"><span>${esc(x.note)}</span><span class="${x.total>=0?'pos':'neg'}" style="font-weight:600">${pesoS(x.total)}</span></div>`).join('')
+    :'<div class="empty-state">Sin créditos cargados en esta caja</div>';
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">${ic('lock',24)}</div>
+      <div><h3>Detalle de créditos a cobrar</h3><div class="msub">${esc(ctxLabel(ctx))} · ${sym==='$'?'$ Pesos':'US$ Dólares'} · por quién está compuesto el saldo actual</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      <div class="ctrlbox">${body}
+        ${items.length?`<div class="crow" style="border-top:1px solid var(--line);padding-top:9px;margin-top:8px"><span style="font-weight:700">Total</span><span style="font-weight:700" class="${total>=0?'pos':'neg'}">${pesoS(total)}</span></div>`:''}
+      </div>
+      <p class="note">Suma histórica de los ajustes de crédito cargados por nombre/concepto, en todos los días de esta caja. <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
+    </div>`;
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
 // Alarma de diferencia de caja grande: recorre TODAS las empresas/proyectos y
 // monedas (no solo la caja activa) usando el mismo umbral que isWarn(), pero
