@@ -1295,7 +1295,7 @@ function openDay(d){
           <div class="crow"><span>Saldo según movimientos</span><span>${peso(d.sf)}</span></div>
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
-          <div class="crow"><span>Créditos a cobrar ${d.cred?`<button type="button" onclick="openCreditDetail()" style="margin-left:8px;background:none;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;vertical-align:1px" title="Ver quién forma este saldo (pide clave)">${ic('lock',11)} Ver</button>`:''}</span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
+          <div class="crow"><span>Créditos a cobrar <button type="button" onclick="openCreditDetail()" style="margin-left:8px;background:none;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;vertical-align:1px" title="Ver quién forma este saldo (pide clave)">${ic('lock',11)} Ver</button></span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
           ${d.fis!=null?`<div class="crow" style="border-top:1px solid var(--line);padding-top:8px"><span>Saldo final (caja + créditos)</span><span style="font-weight:600">${peso(Math.round(((d.fis||0)+(d.cred||0))*100)/100)}</span></div>`:''}
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
       </div>${caja}
