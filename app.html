@@ -352,6 +352,13 @@ tbody tr:last-child td{border-bottom:none}
   .mhead{flex-wrap:wrap;gap:6px 14px}
   .mhead .mstats{margin-left:44px;gap:14px}
   .mhead .mstats div:nth-child(1),.mhead .mstats div:nth-child(2){display:none}
+  /* Fila del conteo físico (toggle +/- · importe · quitar, 3 columnas fijas
+     con style inline): la regla genérica ".mvrow .rmrow{grid-column:2}" de
+     arriba (pensada para las filas de 2 columnas de movimientos/créditos) le
+     ganaba por el mismo selector y mandaba el botón "✕" a la 2ª columna en
+     vez de la 3ª, empujándolo a una fila nueva (bug real, visto en captura
+     mobile). Un selector más específico lo corrige. */
+  #fisMvList .mvrow .rmrow{grid-column:3}
 }
 
 /* ---- bienvenida (el home, integrado arriba de la caja) ---- */
@@ -1264,7 +1271,7 @@ function openDayIso(iso){const d=days.find(x=>x.iso===iso);if(d)openDay(d)}
 function openDay(d){
   const neto=(d.ing||0)+(d.egr||0);
   const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
-  const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>'<span>'+peso(c)+'</span>').join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${peso(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
+  const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>`<span${c<0?' style="color:var(--red)"':''}>${pesoS(c)}</span>`).join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${pesoS(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
   const credDetail=d.credMovs&&d.credMovs.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Detalle de créditos del día</h4>${d.credMovs.map(cm=>`<div class="crow"><span>${esc(cm.note)||'<span style="color:var(--ink3)">(sin nombre)</span>'}</span><span class="${cm.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(cm.imp)}</span></div>`).join('')}</div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
   const ctxInfo=esc(ctxLabel(activeContext()))+' · '+(CUR==='ARS'?'$ Pesos':'US$ Dólares');
@@ -1767,7 +1774,7 @@ let editIso=null,edState=null;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function blankCredMov(){return{type:'in',amt:'',note:''}}
-function blankFisMov(){return{amt:''}}
+function blankFisMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
   let m={iso:nextDate(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
@@ -1780,8 +1787,8 @@ function openEditor(existing){
     // Compat: días guardados con un solo total (fis, sin caja itemizada) se muestran
     // como una parte editable ya cargada, en vez de perder ese valor.
     const fisMovs=(existing.caja&&existing.caja.length)
-      ?existing.caja.map(v=>({amt:v}))
-      :(existing.fis!=null?[{amt:existing.fis}]:[]);
+      ?existing.caja.map(v=>({type:v<0?'out':'in',amt:Math.abs(v)}))
+      :(existing.fis!=null?[{type:existing.fis<0?'out':'in',amt:Math.abs(existing.fis)}]:[]);
     m={iso:existing.iso,si:existing.si,fisMovs,chq:existing.chq==null?'':existing.chq,
        credSi:existing.credSi||0,credMovs,
        movs:existing.movs.map(mv=>({type:mv.imp<0?'out':'in',amt:Math.abs(mv.imp),cpt:mv.cpt||'',ref:mv.ref||''}))};
@@ -1997,20 +2004,22 @@ function recalcCredit(){
 function renderFisMovRows(){
   const list=document.getElementById('fisMvList');if(!list)return;
   list.innerHTML=(edState.fisMovs||[]).map((fm,i)=>`
-    <div class="mvrow" data-i="${i}" style="grid-template-columns:1fr 36px;margin-bottom:8px">
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1fr 36px;margin-bottom:8px">
+      <div class="tgl"><button type="button" class="in ${fm.type==='out'?'':'on'}" data-t="in">＋</button><button type="button" class="out ${fm.type==='out'?'on':''}" data-t="out">−</button></div>
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${fm.amt}">
       <button class="rmrow" type="button" title="Quitar">✕</button>
     </div>`).join('');
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
+    row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.fisMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcFis()});
     row.querySelector('.amount').oninput=e=>{edState.fisMovs[i].amt=e.target.value;recalcFis()};
     row.querySelector('.rmrow').onclick=()=>{edState.fisMovs.splice(i,1);renderFisMovRows();recalcFis()};
   });
 }
 function recalcFis(){
-  const vals=(edState.fisMovs||[]).map(fm=>num(fm.amt)).filter(v=>v!=null);
+  const vals=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:(fm.type==='out'?-1:1)*a}).filter(v=>v!=null);
   const el=document.getElementById('fisTotalDisplay');if(!el)return;
-  el.textContent=vals.length?peso(Math.round(vals.reduce((s,v)=>s+v,0)*100)/100):'—';
+  el.textContent=vals.length?pesoS(Math.round(vals.reduce((s,v)=>s+v,0)*100)/100):'—';
 }
 function recalcEditor(){
   const c=computeEditor();
@@ -2037,7 +2046,7 @@ function saveDay(){
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
-  const cajaParts=(edState.fisMovs||[]).map(fm=>num(fm.amt)).filter(v=>v!=null&&v!==0);
+  const cajaParts=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:Math.round((fm.type==='out'?-1:1)*a*100)/100}).filter(v=>v!=null&&v!==0);
   const fis=cajaParts.length?Math.round(cajaParts.reduce((s,v)=>s+v,0)*100)/100:null;
   const chq=num(document.getElementById('f_chq').value);
   const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
