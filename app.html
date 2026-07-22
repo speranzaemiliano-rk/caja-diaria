@@ -1549,20 +1549,26 @@ function creditNotesBreakdown(ctxId,cur){
   }));
   return Object.entries(acc).map(([note,total])=>({note,total})).filter(x=>Math.abs(x.total)>0.005).sort((a,b)=>b.total-a.total);
 }
-function openCreditDetail(){
+// Pide la clave de créditos (o la crea si todavía no existe) y devuelve
+// true recién cuando quedó realmente desbloqueada — usado tanto por el botón
+// "Ver" del detalle acumulado como por el de la lista de ajustes del editor.
+function askCreditPin(enterMsg){
   const pin=creditPin();
   if(!pin){
-    const setPin=(prompt('Todavía no configuraste una clave para ver el detalle de créditos.\n\nElegí una clave (mínimo 4 caracteres) para protegerlo:')||'').trim();
-    if(!setPin)return;
-    if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return}
+    const setPin=(prompt('Todavía no configuraste una clave para ver los créditos.\n\nElegí una clave (mínimo 4 caracteres) para protegerlos:')||'').trim();
+    if(!setPin)return false;
+    if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return false}
     try{localStorage.setItem(CREDIT_PIN_KEY,setPin)}catch(e){}
     toast('Clave configurada · tocá "Ver" de nuevo para entrar');
-    return;
+    return false;
   }
-  const entered=prompt('Clave para ver el detalle de créditos:');
-  if(entered==null)return;
-  if(entered!==pin){toast('Clave incorrecta');return}
-  renderCreditDetailModal();
+  const entered=prompt(enterMsg);
+  if(entered==null)return false;
+  if(entered!==pin){toast('Clave incorrecta');return false}
+  return true;
+}
+function openCreditDetail(){
+  if(askCreditPin('Clave para ver el detalle de créditos:'))renderCreditDetailModal();
 }
 function changeCreditPin(){
   const setPin=(prompt('Nueva clave (mínimo 4 caracteres):')||'').trim();
@@ -1831,19 +1837,27 @@ document.getElementById('loanSubmit').onclick=()=>{
 
 /* ============ DAY EDITOR ============ */
 let editIso=null,edState=null;
+// Los ajustes de crédito YA guardados (con nombre/concepto real) arrancan
+// ocultos cada vez que se abre el editor — hay que volver a poner la clave
+// para verlos, aunque sea la misma sesión de la página (pedido explícito:
+// "que el detalle de crédito quede oculto"). Las filas nuevas que el usuario
+// tipea en esta sesión (sin _preexisting) nunca se ocultan: es su propio
+// tipeo, no un dato guardado que se esté revelando.
+let credRowsUnlocked=false;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function blankCredMov(){return{type:'in',amt:'',note:''}}
 function blankFisMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
+  credRowsUnlocked=false;
   let m={iso:nextDate(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
   if(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
     // como una fila editable ya cargada, en vez de perder ese valor.
     const credMovs=(existing.credMovs&&existing.credMovs.length)
-      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||''}))
-      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:''}]:[]);
+      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||'',_preexisting:true}))
+      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:'',_preexisting:true}]:[]);
     // Compat: días guardados con un solo total (fis, sin caja itemizada) se muestran
     // como una parte editable ya cargada, en vez de perder ese valor.
     const fisMovs=(existing.caja&&existing.caja.length)
@@ -1885,7 +1899,7 @@ function openEditor(existing){
         <button class="addrow" id="fisAddRow" type="button" style="margin-top:2px">＋ Agregar parte del conteo (opcional)</button>
         <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Total contado</span><span class="mono" style="color:var(--gold2);font-weight:700" id="fisTotalDisplay">—</span></div>
       </div>
-      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
+      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div><button type="button" onclick="unlockCreditRows()" style="background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0" title="Ver los conceptos ya guardados (pide clave)">${ic('lock',12)} Ver</button></div>
       <div class="ctrlbox" style="margin-top:10px">
         <div class="crow"><span>Saldo anterior</span><span class="mono">${peso(m.credSi)}</span></div>
         <div id="credMvList" style="margin-top:10px"></div>
@@ -2040,20 +2054,37 @@ function computeEditor(){
 }
 function renderCredMovRows(){
   const list=document.getElementById('credMvList');if(!list)return;
-  list.innerHTML=(edState.credMovs||[]).map((cm,i)=>`
+  list.innerHTML=(edState.credMovs||[]).map((cm,i)=>{
+    // Una fila con concepto ya guardado (_preexisting) queda tapada hasta que
+    // se desbloquee con la clave — las filas nuevas que se están tipeando en
+    // esta sesión (sin _preexisting) siempre se ven, es el propio tipeo del
+    // usuario, no un dato guardado que se esté revelando.
+    const masked=cm._preexisting&&!credRowsUnlocked;
+    const noteField=masked
+      ?`<div class="note" style="display:flex;align-items:center;gap:6px;color:var(--ink3);cursor:default">${ic('lock',13)} Oculto</div>`
+      :`<input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">`;
+    return `
     <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr 36px;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
-      <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
+      ${noteField}
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
       <button class="rmrow" type="button" title="Quitar">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
-    row.querySelector('.note').oninput=e=>{edState.credMovs[i].note=e.target.value};
+    const noteInput=row.querySelector('input.note');
+    if(noteInput)noteInput.oninput=e=>{edState.credMovs[i].note=e.target.value};
     row.querySelector('.amount').oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
     row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
+}
+function unlockCreditRows(){
+  if(askCreditPin('Clave para ver los conceptos de crédito ya guardados:')){
+    credRowsUnlocked=true;
+    renderCredMovRows();
+  }
 }
 function recalcCredit(){
   let sum=0;
