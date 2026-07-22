@@ -1400,8 +1400,8 @@ function renderCreditCashRatio(){
         <div style="width:${100-r.pctCred}%;height:100%;background:linear-gradient(90deg,#4a6a94,var(--blue))"></div>
         <div style="width:${r.pctCred}%;height:100%;background:linear-gradient(90deg,#b45309,#e0912a)"></div>
       </div>
-      <div class="val mono">${r.pctCred}% crédito</div>
-    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:#f0a020">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja.</p>';
+      <div class="val mono"${r.pctCred>0?' style="color:var(--red)"':''}>${r.pctCred}% crédito</div>
+    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:#f0a020">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja. <span style="color:var(--red)">Rojo</span> = cajas con crédito pendiente de cobro.</p>';
 }
 function renderAnalytics(){
   renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();
@@ -2060,13 +2060,22 @@ function renderCredMovRows(){
     // esta sesión (sin _preexisting) siempre se ven, es el propio tipeo del
     // usuario, no un dato guardado que se esté revelando.
     const masked=cm._preexisting&&!credRowsUnlocked;
-    const noteField=masked
-      ?`<div class="note" style="display:flex;align-items:center;gap:6px;color:var(--ink3);cursor:default">${ic('lock',13)} Oculto</div>`
-      :`<input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">`;
+    if(masked){
+      // Tapado de verdad: ni el concepto ni el monto de una fila ya guardada se
+      // ven hasta poner la clave — solo queda a la vista el total acumulado
+      // (recalcCredit sigue sumando cm.amt en memoria, así que el "Nuevo saldo
+      // de créditos" da bien aunque la fila esté oculta).
+      return `
+      <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1fr 36px;margin-bottom:8px">
+        <div class="tgl"><button type="button" class="in" data-t="in" disabled>＋</button><button type="button" class="out" data-t="out" disabled>−</button></div>
+        <div class="note" style="display:flex;align-items:center;gap:6px;color:var(--ink3);cursor:default">${ic('lock',13)} Oculto — poné la clave para ver el detalle</div>
+        <button class="rmrow" type="button" title="Quitar">✕</button>
+      </div>`;
+    }
     return `
     <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr 36px;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
-      ${noteField}
+      <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
       <button class="rmrow" type="button" title="Quitar">✕</button>
     </div>`;
@@ -2076,7 +2085,8 @@ function renderCredMovRows(){
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
     const noteInput=row.querySelector('input.note');
     if(noteInput)noteInput.oninput=e=>{edState.credMovs[i].note=e.target.value};
-    row.querySelector('.amount').oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
+    const amtInput=row.querySelector('input.amount');
+    if(amtInput)amtInput.oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
     row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
 }
