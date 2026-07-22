@@ -281,7 +281,7 @@
     svg.append(tot,totv);
   })();
 
-  if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+  if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{}))}
 
   /* ---- Instalar como app (PWA), gratis y sin tienda ---- */
   (function(){
