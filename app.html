@@ -1899,7 +1899,7 @@ function openEditor(existing){
         <button class="addrow" id="fisAddRow" type="button" style="margin-top:2px">＋ Agregar parte del conteo (opcional)</button>
         <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Total contado</span><span class="mono" style="color:var(--gold2);font-weight:700" id="fisTotalDisplay">—</span></div>
       </div>
-      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div><button type="button" onclick="unlockCreditRows()" style="background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0" title="Ver los conceptos ya guardados (pide clave)">${ic('lock',12)} Ver</button></div>
+      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
       <div class="ctrlbox" style="margin-top:10px">
         <div class="crow"><span>Saldo anterior</span><span class="mono">${peso(m.credSi)}</span></div>
         <div id="credMvList" style="margin-top:10px"></div>
@@ -2054,24 +2054,25 @@ function computeEditor(){
 }
 function renderCredMovRows(){
   const list=document.getElementById('credMvList');if(!list)return;
-  list.innerHTML=(edState.credMovs||[]).map((cm,i)=>{
-    // Una fila con concepto ya guardado (_preexisting) queda tapada hasta que
-    // se desbloquee con la clave — las filas nuevas que se están tipeando en
-    // esta sesión (sin _preexisting) siempre se ven, es el propio tipeo del
-    // usuario, no un dato guardado que se esté revelando.
-    const masked=cm._preexisting&&!credRowsUnlocked;
-    if(masked){
-      // Tapado de verdad: ni el concepto ni el monto de una fila ya guardada se
-      // ven hasta poner la clave — solo queda a la vista el total acumulado
-      // (recalcCredit sigue sumando cm.amt en memoria, así que el "Nuevo saldo
-      // de créditos" da bien aunque la fila esté oculta).
-      return `
-      <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1fr 36px;margin-bottom:8px">
-        <div class="tgl"><button type="button" class="in" data-t="in" disabled>＋</button><button type="button" class="out" data-t="out" disabled>−</button></div>
-        <div class="note" style="display:flex;align-items:center;gap:6px;color:var(--ink3);cursor:default">${ic('lock',13)} Oculto — poné la clave para ver el detalle</div>
-        <button class="rmrow" type="button" title="Quitar">✕</button>
-      </div>`;
-    }
+  const rows=edState.credMovs||[];
+  // Las filas con concepto ya guardado (_preexisting) quedan tapadas hasta que
+  // se desbloquee con la clave — las filas nuevas que se están tipeando en esta
+  // sesión (sin _preexisting) siempre se ven, es el propio tipeo del usuario,
+  // no un dato guardado que se esté revelando. En vez de una línea "Oculto" por
+  // fila, TODAS las tapadas se juntan en una única línea resumen con contador
+  // (pedido explícito: "que esté todo oculto en una línea sola y luego se
+  // despliegue") — tocar "Ver" + la clave correcta las despliega todas juntas.
+  const maskedIdx=[],visibleIdx=[];
+  rows.forEach((cm,i)=>((cm._preexisting&&!credRowsUnlocked)?maskedIdx:visibleIdx).push(i));
+  let html='';
+  if(maskedIdx.length){
+    html+=`<div class="mvrow-locked" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 14px;margin-bottom:8px">
+      <span style="display:flex;align-items:center;gap:8px;color:var(--ink3);font-size:13px">${ic('lock',14)} ${maskedIdx.length} ajuste${maskedIdx.length===1?'':'s'} de crédito oculto${maskedIdx.length===1?'':'s'}</span>
+      <button type="button" onclick="unlockCreditRows()" style="background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0">${ic('lock',12)} Ver</button>
+    </div>`;
+  }
+  html+=visibleIdx.map(i=>{
+    const cm=rows[i];
     return `
     <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr 36px;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
@@ -2080,6 +2081,7 @@ function renderCredMovRows(){
       <button class="rmrow" type="button" title="Quitar">✕</button>
     </div>`;
   }).join('');
+  list.innerHTML=html;
   list.querySelectorAll('.mvrow').forEach(row=>{
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
