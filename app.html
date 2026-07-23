@@ -1636,14 +1636,7 @@ function ctxRealDays(ctxId,cur){
    este navegador, no es una cuenta real: mismo nivel de seguridad que el
    código de sync). Sin clave configurada, el primer toque la pide para crear. */
 const CREDIT_PIN_KEY='caja_credit_pin_v1';
-const CREDIT_UNLOCKED_KEY='caja_credit_unlocked_v1';
 function creditPin(){return localStorage.getItem(CREDIT_PIN_KEY)||''}
-// Una vez que se puso la clave correcta una vez en este navegador, queda
-// desbloqueado para siempre (pedido explícito del usuario: "de ahora en
-// adelante quiero ver el detalle de ajuste de créditos siempre") — no se
-// vuelve a pedir la clave ni en el modal de detalle ni en el editor.
-function creditUnlocked(){return localStorage.getItem(CREDIT_UNLOCKED_KEY)==='1'}
-function setCreditUnlocked(){try{localStorage.setItem(CREDIT_UNLOCKED_KEY,'1')}catch(e){}}
 // Suma todos los credMovs (ajustes de crédito) de TODOS los días reales de la
 // caja activa, agrupados por nota ("de quién es") — el desglose acumulado que
 // arma el saldo total de "Créditos a cobrar", no solo el de un día puntual.
@@ -1714,11 +1707,10 @@ function askCreditPin(enterMsg){
   const entered=prompt(enterMsg);
   if(entered==null)return false;
   if(entered!==pin){toast('Clave incorrecta');return false}
-  setCreditUnlocked();
   return true;
 }
 function openCreditDetail(){
-  if(creditUnlocked()||askCreditPin('Clave para ver el detalle de créditos:'))renderCreditDetailModal();
+  if(askCreditPin('Clave para ver el detalle de créditos:'))renderCreditDetailModal();
 }
 function changeCreditPin(){
   const setPin=(prompt('Nueva clave (mínimo 4 caracteres):')||'').trim();
@@ -2003,21 +1995,21 @@ document.getElementById('loanSubmit').onclick=()=>{
 /* ============ DAY EDITOR ============ */
 let editIso=null,edState=null;
 // Los ajustes de crédito YA guardados (con nombre/concepto real) arrancan
-// ocultos hasta poner la clave (pedido explícito: "que el detalle de crédito
-// quede oculto") — pero una vez puesta correctamente una vez, queda
-// desbloqueado para siempre en este navegador (creditUnlocked()), así que acá
-// solo se inicializa con ese estado persistido en vez de resetear a false.
-// Las filas nuevas que el usuario tipea en esta sesión (sin _preexisting)
-// nunca se ocultan: es su propio tipeo, no un dato guardado que se esté
-// revelando.
-let credRowsUnlocked=creditUnlocked();
+// ocultos cada vez que se abre el editor — hay que volver a poner la clave
+// para verlos, aunque sea la misma sesión de la página (pedido explícito del
+// usuario, que primero pidió que quedara desbloqueado para siempre y después
+// volvió atrás: "quiero que cada vez que quiera ver los créditos me pida
+// clave"). Las filas nuevas que el usuario tipea en esta sesión (sin
+// _preexisting) nunca se ocultan: es su propio tipeo, no un dato guardado que
+// se esté revelando.
+let credRowsUnlocked=false;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function blankCredMov(){return{type:'in',amt:'',note:''}}
 function blankFisMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
-  credRowsUnlocked=creditUnlocked();
+  credRowsUnlocked=false;
   let m={iso:nextDate(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
   if(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
