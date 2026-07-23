@@ -1909,7 +1909,7 @@ function openEditor(existing){
         <button class="addrow" id="fisAddRow" type="button" style="margin-top:2px">＋ Agregar parte del conteo (opcional)</button>
         <div class="crow" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><span>Total contado</span><span class="mono" style="color:var(--gold2);font-weight:700" id="fisTotalDisplay">—</span></div>
       </div>
-      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div></div>
+      <div class="ed-sub" style="margin-top:20px">Créditos a cobrar <div class="ln2"></div><button type="button" onclick="openCreditDetail()" style="background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0" title="Ver por quién está compuesto el saldo acumulado (pide clave)">${ic('lock',12)} Ver detalle</button></div>
       <div class="ctrlbox" style="margin-top:10px">
         <div class="crow"><span>Saldo anterior</span><span class="mono">${peso(m.credSi)}</span></div>
         <div id="credMvList" style="margin-top:10px"></div>
