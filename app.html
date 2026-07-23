@@ -571,6 +571,11 @@ tbody tr:hover{background:var(--panel2)}
           <div id="creditCashRatio"></div>
         </div>
 
+        <div class="panel" style="margin-bottom:18px">
+          <div class="ph"><div><h3>Deuda por préstamos entre empresas</h3><p>Cuánto debe cada empresa/proyecto a otras, comparado con su saldo actual</p></div></div>
+          <div id="loanDebtRatio"></div>
+        </div>
+
         <div class="month">
           <div class="mhead" data-key="ana-old" onclick="toggleM(this)">
             <span class="cv">▶</span>
@@ -1510,8 +1515,45 @@ function renderCreditCashRatio(){
       <div class="val mono"${r.pctCred>0?' style="color:var(--red)"':''}>${r.pctCred}% crédito</div>
     </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:var(--red)">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja. <span style="color:var(--red)">Rojo</span> = cajas con crédito pendiente de cobro.</p>';
 }
+// Deuda por préstamos entre empresas: mismo patrón visual que "Crédito vs.
+// efectivo" (barra apilada azul/roja + %) pero para la DEUDA de préstamos
+// entre empresas en vez del crédito a cobrar de clientes — pedido explícito
+// del usuario ("% de deuda por préstamos entre empresas", tras aclarar que
+// no se refería al crédito a cobrar sino a cuánto debe cada empresa a las
+// demás). Solo entran las cajas con `ctxLoanNet<0` (deben más de lo que
+// prestaron) — `ctxLoanNet>0` (les deben) no es una deuda, no aplica acá. A
+// diferencia de "Crédito vs. efectivo" (que exige un arqueo cargado, `fis`),
+// acá se usa el saldo según movimientos (`sf` del último día real de esa
+// caja) como "efectivo" — la deuda de préstamos no depende de haber hecho un
+// arqueo físico, así que exigirlo dejaría afuera cajas sin arqueo cargado.
+function renderLoanDebtRatio(){
+  const el=document.getElementById('loanDebtRatio');if(!el)return;
+  const rows=[];
+  contexts.forEach(c=>{
+    ['ARS','USD'].forEach(cur=>{
+      const net=ctxLoanNet(c.id,cur);
+      if(net>=-0.005)return;
+      const debt=Math.abs(net);
+      const real=ctxRealDays(c.id,cur);
+      const cash=Math.max(0,real.length?(real[real.length-1].sf||0):0);
+      const tot=cash+debt;
+      if(tot<=0.005)return;
+      rows.push({label:ctxLabel(c)+' · '+CUR_SYM[cur],pctDebt:Math.round(debt/tot*100),cash,debt,cur});
+    });
+  });
+  if(!rows.length){el.innerHTML='<div class="empty-state">Ninguna empresa/proyecto debe por préstamos entre empresas en este momento</div>';return}
+  rows.sort((a,b)=>b.pctDebt-a.pctDebt);
+  el.innerHTML='<div class="bars">'+rows.map(r=>`<div class="bar-row" style="grid-template-columns:190px 1fr auto" title="${esc(r.label)} · Efectivo ${pesoCur(Math.round(r.cash),r.cur)} · Debe ${pesoCur(Math.round(r.debt),r.cur)}">
+      <div class="nm">${esc(r.label)}</div>
+      <div class="bar-track" style="display:flex">
+        <div style="width:${100-r.pctDebt}%;height:100%;background:linear-gradient(90deg,#4a6a94,var(--blue))"></div>
+        <div style="width:${r.pctDebt}%;height:100%;background:linear-gradient(90deg,#8a2323,var(--red))"></div>
+      </div>
+      <div class="val mono" style="color:var(--red)">${r.pctDebt}% deuda</div>
+    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (saldo actual) &nbsp; <span style="color:var(--red)">■</span> Deuda por préstamos &nbsp;· cuánto debe cada empresa/proyecto a otras, comparado con su saldo actual.</p>';
+}
 function renderAnalytics(){
-  renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();
+  renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();renderLoanDebtRatio();
   const avgDay=totMov/(real.length||1);
   const bigDay=real.length?real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0]:null;
   document.getElementById('anaKpis').innerHTML=`
