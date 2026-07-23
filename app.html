@@ -1505,10 +1505,10 @@ function renderCreditCashRatio(){
       <div class="nm">${esc(r.label)}</div>
       <div class="bar-track" style="display:flex">
         <div style="width:${100-r.pctCred}%;height:100%;background:linear-gradient(90deg,#4a6a94,var(--blue))"></div>
-        <div style="width:${r.pctCred}%;height:100%;background:linear-gradient(90deg,#b45309,#e0912a)"></div>
+        <div style="width:${r.pctCred}%;height:100%;background:linear-gradient(90deg,#8a2323,var(--red))"></div>
       </div>
       <div class="val mono"${r.pctCred>0?' style="color:var(--red)"':''}>${r.pctCred}% crédito</div>
-    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:#f0a020">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja. <span style="color:var(--red)">Rojo</span> = cajas con crédito pendiente de cobro.</p>';
+    </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (caja real) &nbsp; <span style="color:var(--red)">■</span> Crédito a cobrar &nbsp;· según el último arqueo cargado en cada caja. <span style="color:var(--red)">Rojo</span> = cajas con crédito pendiente de cobro.</p>';
 }
 function renderAnalytics(){
   renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();
