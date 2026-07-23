@@ -217,6 +217,10 @@ tbody tr:last-child td{border-bottom:none}
 
 /* detail modal */
 .overlay{position:fixed;inset:0;background:rgba(5,8,12,.7);backdrop-filter:blur(5px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto}
+/* El vale de caja (#overlay/#modal, vía printVale) se abre arriba del editor
+   ya abierto (#edOverlay) — mismo z-index que compartían no alcanzaba porque
+   el orden en el DOM hacía que el editor, al venir después, tapara el vale. */
+#overlay{z-index:110}
 .overlay.on{display:flex}
 .modal{width:100%;max-width:920px;background:linear-gradient(170deg,var(--panel),var(--bg2));border:1px solid var(--line2);border-radius:18px;box-shadow:var(--shadow);animation:pop .3s cubic-bezier(.2,.9,.3,1)}
 @keyframes pop{from{opacity:0;transform:scale(.96) translateY(12px)}to{opacity:1;transform:none}}
@@ -317,6 +321,9 @@ tbody tr:last-child td{border-bottom:none}
 .tgl button.out.on{background:var(--red-bg);color:var(--red)}
 .rmrow{background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink3);cursor:pointer;height:38px;font-size:16px;transition:.15s}
 .rmrow:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.valebtn{background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink3);cursor:pointer;height:38px;display:grid;place-items:center;transition:.15s}
+.valebtn:hover{background:var(--accent-soft);color:var(--gold2);border-color:var(--gold2)}
+#credMvList .rmrow,#credMvList .valebtn{width:36px;flex:0 0 36px}
 .addrow{background:none;border:1px dashed var(--line2);color:var(--ink2);font-family:inherit;font-weight:600;font-size:13px;padding:10px;border-radius:10px;cursor:pointer;width:100%;transition:.15s;margin-top:4px}
 .addrow:hover{border-color:var(--gold);color:var(--gold2);background:rgba(212,166,74,.05)}
 .ed-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 4px;padding:16px;background:var(--bg);border:1px solid var(--line);border-radius:13px}
@@ -424,9 +431,14 @@ tbody tr:hover{background:var(--panel2)}
    movimientos + control de caja) — printDay() lo abre y llama window.print() */
 @media print{
   .app,.tip,.overlay:not(.on){display:none!important}
+  /* El vale de caja (printVale) se abre en #overlay arriba del editor
+     (#edOverlay), que sigue abierto detrás — sin esto, al imprimir salían
+     los dos superpuestos en la hoja (todo el formulario del editor + el
+     vale). Solo se oculta cuando #overlay está realmente abierto encima. */
+  #overlay.on ~ #edOverlay{display:none!important}
   .overlay.on{position:static!important;background:none!important;backdrop-filter:none!important;padding:0!important;inset:auto!important;display:block!important;overflow:visible!important}
   .overlay.on .modal,.overlay.on .editor{box-shadow:none!important;border:none!important;max-width:100%!important;width:100%!important;border-radius:0!important;animation:none!important}
-  .mclose,.mtop .btn-ghost{display:none!important}
+  .mclose,.mtop .btn-ghost,.vale-actions{display:none!important}
   .dkpis{grid-template-columns:repeat(4,1fr)!important}
   a[href]::after{content:''}
 }
@@ -1311,6 +1323,93 @@ function printDay(iso){
   openDay(d);
   setTimeout(()=>window.print(),80);
 }
+// Convierte un entero (0 a 999.999.999) a su forma escrita en español, para
+// el renglón "Importe en letra" del vale de caja — igual que se escribe a
+// mano en un cheque. No soporta negativos ni decimales (eso lo maneja
+// importeEnLetras, que separa la parte entera de los centavos).
+function numeroALetras(n){
+  n=Math.round(Math.abs(n));
+  if(n===0)return 'cero';
+  const UNI=['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
+  const DIEC=['diez','once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve'];
+  const VEINT=['veinte','veintiuno','veintidós','veintitrés','veinticuatro','veinticinco','veintiséis','veintisiete','veintiocho','veintinueve'];
+  const DEC=['','','veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+  const CEN=['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
+  function tresDigitos(num){
+    if(num===0)return '';
+    if(num===100)return 'cien';
+    const c=Math.floor(num/100),resto=num%100;
+    let s=c>0?CEN[c]:'';
+    if(resto>=20&&resto<30)s+=(s?' ':'')+VEINT[resto-20];
+    else if(resto>=10&&resto<20)s+=(s?' ':'')+DIEC[resto-10];
+    else if(resto>0){
+      const d=Math.floor(resto/10),u=resto%10;
+      let t=DEC[d];
+      if(u>0)t+=(t?' y ':'')+UNI[u];
+      s+=(s?' ':'')+t;
+    }
+    return s;
+  }
+  const millones=Math.floor(n/1000000),miles=Math.floor((n%1000000)/1000),cientos=n%1000;
+  const partes=[];
+  if(millones>0)partes.push(millones===1?'un millón':tresDigitos(millones)+' millones');
+  if(miles>0)partes.push(miles===1?'mil':tresDigitos(miles)+' mil');
+  if(cientos>0||partes.length===0)partes.push(tresDigitos(cientos));
+  return partes.join(' ').trim();
+}
+// Arma la frase completa "cien mil pesos con 50/100" para el vale de caja.
+function importeEnLetras(amount,cur){
+  amount=Math.abs(amount);
+  const entero=Math.floor(amount),centavos=Math.round((amount-entero)*100);
+  const moneda=cur==='USD'?(entero===1?'dólar':'dólares'):(entero===1?'peso':'pesos');
+  let texto=numeroALetras(entero);
+  if(/uno$/.test(texto))texto=texto.replace(/uno$/,'un'); // "veintiuno" -> "veintiún" antes de "pesos"
+  texto=texto.charAt(0).toUpperCase()+texto.slice(1)+' '+moneda;
+  if(centavos>0)texto+=' con '+String(centavos).padStart(2,'0')+'/100';
+  return texto;
+}
+// Genera e imprime un "vale de caja" (comprobante de que se otorgó un
+// crédito/adelanto) para la fila `i` de edState.credMovs — pedido explícito
+// del usuario, con una foto de un talonario de "Vale de Caja" físico como
+// referencia de formato: título, importe en letra, concepto y renglones de
+// Fecha / Autorizado por / Recibido por para firmar a mano tras imprimir.
+function printVale(i){
+  const cm=(edState.credMovs||[])[i];if(!cm)return;
+  const amt=num(cm.amt);
+  if(amt==null||amt<=0){toast('Cargá un importe válido antes de imprimir el vale');return}
+  const note=(cm.note||'').trim();
+  if(!note){toast('Cargá el nombre / concepto antes de imprimir el vale');return}
+  const fechaIso=document.getElementById('f_date')?.value||edState.iso||new Date().toISOString().slice(0,10);
+  const [y,m,d]=fechaIso.split('-');
+  const fechaFmt=`${d}/${m}/${y}`;
+  const letras=importeEnLetras(amt,CUR);
+  document.getElementById('modal').innerHTML=`
+    <div class="vale-actions" style="display:flex;justify-content:flex-end;gap:10px;padding:16px 16px 0">
+      <button class="btn-ghost" onclick="window.print()">${ic('printer',15)} Imprimir</button>
+      <button class="mclose" onclick="closeModal()">✕</button>
+    </div>
+    <div style="padding:10px 26px 30px">
+      <div style="border:1.5px solid #7a1330;border-radius:16px;overflow:hidden;font-family:'Roboto',sans-serif">
+        <div style="display:flex;align-items:stretch;background:#fff">
+          <div style="flex:1;background:linear-gradient(160deg,#8a1a38,#6d0f28);color:#fff;padding:16px 20px;font-size:22px;font-weight:700">Vale de Caja</div>
+          <div style="width:120px;border-left:1.5px solid #7a1330;display:flex;align-items:center;justify-content:center;font-size:12px;color:#7a1330;font-weight:600">${esc(ctxLabel(activeContext()))}</div>
+        </div>
+        <div style="padding:12px 20px;border-bottom:1.5px solid #7a1330">
+          <div style="font-size:11px;letter-spacing:.5px;color:#7a1330;font-weight:700;text-transform:uppercase">Importe (en letra)</div>
+          <div style="font-size:15px;margin-top:4px">${esc(letras)}</div>
+          <div class="mono" style="font-size:13px;color:#7a1330;margin-top:2px">${peso(amt)}</div>
+        </div>
+        <div style="background:#7a1330;color:#fff;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Concepto</div>
+        <div style="padding:16px 20px;min-height:90px;font-size:14px;line-height:1.7;background:linear-gradient(#fff 0 50%,#fbebee 50% 100%);background-size:100% 34px">${esc(note)}${cm.type==='out'?' (devolución / pago de crédito)':''}</div>
+        <div style="display:flex;border-top:1.5px solid #7a1330;font-size:12px">
+          <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Fecha</div><div style="margin-top:16px">${fechaFmt}</div></div>
+          <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Autorizado por</div><div style="margin-top:16px">&nbsp;</div></div>
+          <div style="flex:1;padding:12px 16px"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Recibido por</div><div style="margin-top:16px">&nbsp;</div></div>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
 function closeModal(){document.getElementById('overlay').classList.remove('on');if(!document.getElementById('edOverlay').classList.contains('on'))document.body.style.overflow=''}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeModal()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeEditor();document.getElementById('actionsSecondary').classList.remove('show')}});
@@ -2084,11 +2183,14 @@ function renderCredMovRows(){
   html+=visibleIdx.map(i=>{
     const cm=rows[i];
     return `
-    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr 36px;margin-bottom:8px">
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr auto;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
       <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
-      <button class="rmrow" type="button" title="Quitar">✕</button>
+      <div style="display:flex;gap:6px">
+        <button class="valebtn" type="button" title="Imprimir vale de caja">${ic('printer',14)}</button>
+        <button class="rmrow" type="button" title="Quitar">✕</button>
+      </div>
     </div>`;
   }).join('');
   list.innerHTML=html;
@@ -2099,6 +2201,7 @@ function renderCredMovRows(){
     if(noteInput)noteInput.oninput=e=>{edState.credMovs[i].note=e.target.value};
     const amtInput=row.querySelector('input.amount');
     if(amtInput)amtInput.oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
+    row.querySelector('.valebtn').onclick=()=>printVale(i);
     row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
 }
