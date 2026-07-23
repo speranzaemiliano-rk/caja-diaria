@@ -1655,6 +1655,49 @@ function creditNotesBreakdown(ctxId,cur){
   }));
   return Object.entries(acc).map(([note,total])=>({note,total})).filter(x=>Math.abs(x.total)>0.005).sort((a,b)=>b.total-a.total);
 }
+// Devuelve cada ajuste individual (no el total agrupado) que compone un
+// nombre/concepto del desglose, para poder editarlo/eliminarlo desde el modal
+// "Ver detalle" — pedido explícito del usuario ("aun no puedo editar lo
+// oculto", refiriéndose a ese modal, que hasta ahora era de solo lectura).
+// Solo mira `userDays` (la caja activa en memoria, src:'user') — el histórico
+// importado (BASE_SEED) no tiene `credMovs` en absoluto (es de antes de que
+// existiera esta función), así que nunca hay ajustes de solo-lectura que
+// mezclar acá; el total de creditNotesBreakdown() siempre cuadra con la suma
+// de estas entradas.
+function creditNoteEntries(note){
+  const key=(note||'').trim()||'(sin nombre)';
+  const out=[];
+  userDays.forEach(d=>(d.credMovs||[]).forEach((cm,idx)=>{
+    if(((cm.note||'').trim()||'(sin nombre)')===key)out.push({iso:d.iso,date:d.date,idx,imp:cm.imp});
+  }));
+  return out.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+}
+function editCreditNoteEntry(iso,idx){
+  const d=userDays.find(x=>x.iso===iso);
+  if(!d){toast('Solo podés editar ajustes de días que cargaste vos');return}
+  const cm=(d.credMovs||[])[idx];if(!cm)return;
+  const newNote=prompt('Nombre / concepto:',cm.note||'');
+  if(newNote==null)return;
+  const newAmtStr=prompt('Importe (negativo si es una baja del crédito, ej. -5000):',cm.imp);
+  if(newAmtStr==null)return;
+  const newAmt=num(newAmtStr);
+  if(newAmt==null){toast('Importe inválido');return}
+  cm.note=newNote.trim();
+  cm.imp=Math.round(newAmt*100)/100;
+  d.credAdj=Math.round((d.credMovs||[]).reduce((s,x)=>s+x.imp,0)*100)/100;
+  cascadeChain(activeContextId,CUR,userDays);
+  saveUser();renderAll();renderCreditDetailModal();toast('Ajuste actualizado');
+}
+function deleteCreditNoteEntry(iso,idx){
+  const d=userDays.find(x=>x.iso===iso);
+  if(!d){toast('Solo podés eliminar ajustes de días que cargaste vos');return}
+  const cm=(d.credMovs||[])[idx];if(!cm)return;
+  if(!confirm('¿Eliminar este ajuste de crédito?\n\n'+(cm.note||'(sin nombre)')+' · '+pesoS(cm.imp)+' · '+d.date+'\n\nEsta acción no se puede deshacer.'))return;
+  d.credMovs.splice(idx,1);
+  d.credAdj=Math.round((d.credMovs||[]).reduce((s,x)=>s+x.imp,0)*100)/100;
+  cascadeChain(activeContextId,CUR,userDays);
+  saveUser();renderAll();renderCreditDetailModal();toast('Ajuste eliminado');
+}
 // Pide la clave de créditos (o la crea si todavía no existe) y devuelve
 // true recién cuando quedó realmente desbloqueada — usado tanto por el botón
 // "Ver" del detalle acumulado como por el de la lista de ajustes del editor.
@@ -1688,8 +1731,23 @@ function renderCreditDetailModal(){
   const ctx=activeContext(),sym=CUR_SYM[CUR];
   const items=creditNotesBreakdown(activeContextId,CUR);
   const total=Math.round(items.reduce((s,x)=>s+x.total,0)*100)/100;
+  // Cada nombre/concepto muestra su total (como antes) y, debajo, cada ajuste
+  // individual que lo compone con ✎/🗑 (pedido explícito del usuario: "aun no
+  // puedo editar lo oculto" — este modal era de solo lectura hasta ahora).
   const body=items.length
-    ?items.map(x=>`<div class="crow"><span>${esc(x.note)}</span><span class="${x.total>=0?'pos':'neg'}" style="font-weight:600">${pesoS(x.total)}</span></div>`).join('')
+    ?items.map(x=>{
+      const entries=creditNoteEntries(x.note);
+      const rows=entries.map(e=>`
+        <div class="crow" style="padding:6px 0 6px 14px;border-bottom:none;font-size:12.5px;color:var(--ink2)">
+          <span>${e.date}</span>
+          <span style="display:flex;align-items:center;gap:2px">
+            <span class="${e.imp>=0?'pos':'neg'}" style="min-width:78px;text-align:right;font-family:var(--mono)">${pesoS(e.imp)}</span>
+            <button class="rowact" title="Editar este ajuste" onclick="editCreditNoteEntry('${e.iso}',${e.idx})">✎</button>
+            <button class="rowact del" title="Eliminar este ajuste" onclick="deleteCreditNoteEntry('${e.iso}',${e.idx})">${ic('trash',13)}</button>
+          </span>
+        </div>`).join('');
+      return `<div class="crow" style="font-weight:600"><span>${esc(x.note)}</span><span class="${x.total>=0?'pos':'neg'}">${pesoS(x.total)}</span></div>${rows}`;
+    }).join('')
     :'<div class="empty-state">Sin créditos cargados en esta caja</div>';
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">${ic('lock',24)}</div>
@@ -1699,7 +1757,7 @@ function renderCreditDetailModal(){
       <div class="ctrlbox">${body}
         ${items.length?`<div class="crow" style="border-top:1px solid var(--line);padding-top:9px;margin-top:8px"><span style="font-weight:700">Total</span><span style="font-weight:700" class="${total>=0?'pos':'neg'}">${pesoS(total)}</span></div>`:''}
       </div>
-      <p class="note">Suma histórica de los ajustes de crédito cargados por nombre/concepto, en todos los días de esta caja. <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
+      <p class="note">Suma histórica de los ajustes de crédito cargados por nombre/concepto, en todos los días de esta caja — ✎/🗑 en cada renglón para editar o eliminar un ajuste puntual. <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
