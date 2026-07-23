@@ -1380,6 +1380,14 @@ function printVale(i){
   const note=(cm.note||'').trim();
   if(!note){toast('Cargá el nombre / concepto antes de imprimir el vale');return}
   const fechaIso=document.getElementById('f_date')?.value||edState.iso||new Date().toISOString().slice(0,10);
+  printValeFor(amt,note,cm.type,fechaIso);
+}
+// Arma y abre el vale (usado tanto por el botón manual `printVale(i)` como
+// por el auto-imprimir de `saveDay()` al otorgar un crédito nuevo) — no
+// depende del editor abierto ni de `edState`, así que sigue funcionando
+// aunque el editor ya se haya cerrado (pedido explícito del usuario: "que me
+// imprima un vale de caja cuando otorgo un crédito", automático al guardar).
+function printValeFor(amt,note,type,fechaIso){
   const [y,m,d]=fechaIso.split('-');
   const fechaFmt=`${d}/${m}/${y}`;
   const letras=importeEnLetras(amt,CUR);
@@ -1400,7 +1408,7 @@ function printVale(i){
           <div class="mono" style="font-size:13px;color:#7a1330;margin-top:2px">${peso(amt)}</div>
         </div>
         <div style="background:#7a1330;color:#fff;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Concepto</div>
-        <div style="padding:16px 20px;min-height:90px;font-size:14px;line-height:1.7;background:linear-gradient(#fff 0 50%,#fbebee 50% 100%);background-size:100% 34px">${esc(note)}${cm.type==='out'?' (devolución / pago de crédito)':''}</div>
+        <div style="padding:16px 20px;min-height:90px;font-size:14px;line-height:1.7;background:linear-gradient(#fff 0 50%,#fbebee 50% 100%);background-size:100% 34px">${esc(note)}${type==='out'?' (devolución / pago de crédito)':''}</div>
         <div style="display:flex;border-top:1.5px solid #7a1330;font-size:12px">
           <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Fecha</div><div style="margin-top:16px">${fechaFmt}</div></div>
           <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Autorizado por</div><div style="margin-top:16px">&nbsp;</div></div>
@@ -2317,6 +2325,12 @@ function saveDay(){
   const chq=num(document.getElementById('f_chq').value);
   const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
   const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
+  // Créditos NUEVOS (recién tipeados en esta sesión, no _preexisting) que
+  // suman al saldo — "otorgar un crédito" — para el auto-imprimir del vale de
+  // caja al guardar (pedido explícito: "que me imprima un vale de caja cuando
+  // otorgo un crédito"). Se guarda ANTES de cerrar el editor porque
+  // `edState` sigue disponible después, pero es más prolijo capturarlo acá.
+  const newGrants=(edState.credMovs||[]).filter(cm=>!cm._preexisting&&cm.type==='in'&&num(cm.amt)>0&&(cm.note||'').trim());
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
   // dif queda provisorio (cascadeChain lo recalcula sumando créditos al conteo).
@@ -2348,7 +2362,16 @@ function saveDay(){
   if(pendingLoans.length)extras.push(pendingLoans.length+' préstamo(s)');
   if(pendingFx.length)extras.push(pendingFx.length+' cambio(s) de divisa');
   toast(extras.length?((wasEdit?'Día actualizado':'Día agregado')+' + '+extras.join(' + ')+' registrado(s)'):(wasEdit?'Día actualizado':'Día agregado correctamente'));
-  setTimeout(()=>openDayIso(iso),120);
+  if(newGrants.length){
+    // Imprime el vale del primer crédito recién otorgado en vez de abrir el
+    // resumen del día — es lo que se acaba de generar, tiene prioridad. Si
+    // se cargó más de uno en el mismo guardado (caso raro), el resto se
+    // puede imprimir después reabriendo el día y usando el 🖨 de cada fila.
+    const g=newGrants[0];
+    setTimeout(()=>{printValeFor(num(g.amt),(g.note||'').trim(),g.type,iso);setTimeout(()=>window.print(),150)},120);
+  }else{
+    setTimeout(()=>openDayIso(iso),120);
+  }
 }
 function deleteDay(iso){
   if(!confirm('¿Eliminar este día y todos sus movimientos? Esta acción no se puede deshacer.'))return;
