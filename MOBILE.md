@@ -102,19 +102,32 @@ subiendo una versión vieja de la app.
 ### ⚠️ Riesgo real de rechazo en Apple
 
 La guideline 4.2 de Apple ("Minimum Functionality") rechaza apps que son básicamente un
-sitio web envuelto, sin nada nativo de verdad. Caja Diaria hoy no usa ninguna capacidad
-nativa del teléfono (todo corre en el WebView, como en el navegador) — hay una
-posibilidad real de que Apple la rechace en la primera revisión. Si eso pasa, algunas
-opciones para sumar funcionalidad nativa genuina con Capacitor (no implementadas todavía,
-quedan para una vuelta futura si hace falta):
+sitio web envuelto, sin nada nativo de verdad. Para reducir ese riesgo se sumaron dos
+capacidades nativas genuinas con Capacitor (implementadas, ver `app.html`):
 
-- Notificaciones locales nativas para el recordatorio de backup diario
-  (`@capacitor/local-notifications`).
-- Face ID / Touch ID para desbloquear el detalle de créditos protegido, en vez de (o
-  además de) la clave actual (`@capacitor/biometric-auth` o similar).
+- **Notificación diaria de arqueo** (`@capacitor/local-notifications`): recordatorio
+  configurable (⋯ → Notificación diaria) que avisa si todavía no se cargó el cierre del
+  día en la caja activa. Ver bullet correspondiente en `CLAUDE.md`.
+- **Huella digital / Face ID para el detalle de créditos** (`@capgo/capacitor-native-biometric`,
+  no `@aparajita/capacitor-biometric-auth` ni `@capacitor/biometric-auth` — se probaron
+  esas alternativas primero pero requerían un wrapper JS con import/bundler que no encaja
+  con el "sin build" del proyecto; `@capgo/capacitor-native-biometric` registra un plugin
+  nativo simple, accesible directo como `Capacitor.Plugins.NativeBiometric` sin import).
+  Alternativa a tipear la clave de créditos, no un reemplazo — sigue pidiendo verificación
+  cada vez (nunca un desbloqueo persistente, ver `CLAUDE.md`) y si falla/no está disponible
+  cae al `prompt()` de la clave de siempre.
+
+Ambas quedan completamente inertes en la versión web/PWA (`window.Capacitor` no existe ahí,
+así que el código ni siquiera intenta llamarlas) — mismo `app.html`, sin build, para las dos
+plataformas. Verificado en este entorno: `npx cap sync android` + `./gradlew assembleDebug`
+compilan OK con los dos plugins nuevos (permisos `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED`/
+`WAKE_LOCK`/`USE_BIOMETRIC`/`USE_FINGERPRINT` confirmados con `aapt dump badging`); `npx cap
+sync ios` genera el `Package.swift` correcto pero, como el resto de iOS, no se pudo compilar
+acá (falta Xcode/Mac) — se agregó a mano `NSFaceIDUsageDescription` en `Info.plist` (obligatorio
+en iOS para Face ID, Apple rechaza/crashea sin esa clave; no lo genera `cap sync` solo).
 
 Google Play es bastante más permisivo con este tipo de apps (TWA/wrappers), así que ese
-lado tiene mucho menos riesgo de rechazo.
+lado tiene mucho menos riesgo de rechazo — estas dos funciones ayudan más de cara a Apple.
 
 ## Qué NO se hizo (y por qué)
 
