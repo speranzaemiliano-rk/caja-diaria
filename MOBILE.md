@@ -1,18 +1,35 @@
 # Caja Diaria — apps nativas (Google Play / App Store)
 
-Wrapper nativo con **Capacitor** para poder subir la misma app web (`www/`) a Google Play y
-al App Store, sin reescribirla. La web en sí sigue siendo estática, sin build, tal como
-siempre — Capacitor solo la empaqueta adentro de un proyecto Android/iOS nativo.
+Wrapper nativo con **Capacitor** para poder subir la misma app web a Google Play y al App
+Store, sin reescribirla. La web en sí sigue siendo estática, sin build, exactamente en la
+raíz del repo tal como siempre — Capacitor solo la empaqueta adentro de un proyecto
+Android/iOS nativo, a partir de una **copia** aislada.
+
+## ⚠️ El sitio web NO se movió (y no se puede mover)
+
+Se intentó en un primer momento mover `index.html`/`app.html`/etc. a una carpeta `www/`
+para que conviva más prolijo con `android/`/`ios/` — **esto rompió el sitio en vivo** (dos
+veces, la segunda por un problema al mergear el revert): GitHub Pages en este repo resultó
+estar sirviendo desde "Deploy from a branch" (Jekyll, sirviendo el árbol de `main` tal
+cual, con `.nojekyll` en la raíz evitando que Jekyll transforme nada), no desde el
+workflow de Actions como se había asumido — al sacar los archivos de la raíz, dejaron de
+estar donde ese mecanismo los busca. **Los archivos del sitio tienen que seguir viviendo
+en la raíz del repo, siempre.**
+
+Para que Capacitor pueda empaquetar la app igual sin volver a tocar la raíz,
+`scripts/prepare-mobile-www.sh` arma una **copia** aislada en `mobile-www/` (carpeta
+generada, no se comitea — está en `.gitignore`) con los archivos que hacen falta
+(`index.html`, `app.html`, `manifest.json`, `sw.js`, íconos, `biletes.avif`). Capacitor
+usa esa copia como `webDir`, nunca la raíz directamente — apuntarlo a la raíz metería
+`.git/`, `node_modules/`, `android/`, `ios/` adentro del APK/IPA.
 
 ## Qué se armó
 
-- `www/` — el sitio de siempre (`index.html`, `app.html`, `manifest.json`, `sw.js`, íconos)
-  se movió acá desde la raíz del repo, sin tocar una sola línea de su contenido. Sigue
-  sirviéndose igual en GitHub Pages (el workflow ahora apunta a `www/` en vez de `.`).
+- `scripts/prepare-mobile-www.sh` + `mobile-www/` (generada, gitignoreada) — ver arriba.
 - `capacitor.config.json` — `appId: com.cajadiaria.app`, `appName: Caja Diaria`,
-  `webDir: www`. **El `appId` no se puede cambiar después de la primera publicación en
-  cada tienda** — confirmalo antes de publicar (si preferís otro, como algo con tu propio
-  dominio, cambialo en este archivo antes de compilar nada).
+  `webDir: mobile-www`. **El `appId` no se puede cambiar después de la primera
+  publicación en cada tienda** — confirmalo antes de publicar (si preferís otro, como algo
+  con tu propio dominio, cambialo en este archivo antes de compilar nada).
 - `android/` — proyecto nativo de Android generado con `npx cap add android`. **Se probó
   en este entorno y compila un APK debug real y funcional** (`com.cajadiaria.app`,
   label "Caja Diaria", verificado con `aapt dump badging`).
@@ -22,34 +39,40 @@ siempre — Capacitor solo la empaqueta adentro de un proyecto Android/iOS nativ
   `.pbxproj` son válidos, pero la primera compilación real va a ser la que hagas vos en
   Xcode.
 - Íconos y splash screens para ambas plataformas, generados con `npx capacitor-assets
-  generate` a partir de `assets/icon.png` (copia de `www/icon-512.png`, 512×512).
+  generate` a partir de `assets/icon.png` (copia de `icon-512.png`, 512×512).
   **Recomendado**: antes de publicar de verdad, reemplazá `assets/icon.png` por una
   versión de mayor resolución (ideal 1024×1024) y volvé a correr el comando — la fuente
   actual da un resultado aceptable pero no perfecto al verse escalada en los tamaños más
-  grandes (ícono de la App Store, por ejemplo).
-- `.gitignore` — excluye `node_modules/`, `android/local.properties` (específico de cada
-  máquina), y las carpetas de build (`android/build/`, `android/.gradle/`,
-  `ios/App/build/`, etc.) — nunca se comitean, se regeneran solas al compilar.
+  grandes (ícono de la App Store, por ejemplo). **Ojo**: ese comando también reescribe
+  `manifest.json` si lo detecta (le agrega íconos PWA propios apuntando a rutas que no
+  existen) — ya pasó una vez y hubo que restaurarlo a mano. Si volvés a correr
+  `capacitor-assets generate`, revisá el diff de `manifest.json` antes de commitear.
+- `.gitignore` — excluye `node_modules/`, `mobile-www/` (generada), `android/local.properties`
+  (específico de cada máquina), y las carpetas de build (`android/build/`,
+  `android/.gradle/`, `ios/App/build/`, etc.) — nunca se comitean, se regeneran solas al
+  compilar/preparar.
 
 ## Cómo mantenerlo sincronizado con la web
 
-Cada vez que cambia algo en `www/` (los PRs normales de la app siguen funcionando
-exactamente igual), para que el cambio llegue a las apps nativas hay que correr:
+Cada vez que cambia algo en `index.html`/`app.html`/`manifest.json`/`sw.js` (los PRs
+normales de la app siguen funcionando exactamente igual, en la raíz, como siempre), para
+que el cambio llegue a las apps nativas hay que correr:
 
 ```
-npx cap sync
+npm run prepare:mobile && npx cap sync
 ```
 
-Esto copia `www/` adentro de `android/app/src/main/assets/public` y
+El primer comando actualiza `mobile-www/` con la versión más reciente de los archivos de
+la raíz; el segundo copia `mobile-www/` adentro de `android/app/src/main/assets/public` y
 `ios/App/App/public`. **Esto no pasa solo** — si publicás una versión nueva en las
-tiendas, acordate de correr `cap sync` antes de recompilar, si no vas a estar subiendo
-una versión vieja de la app.
+tiendas, acordate de correr los dos comandos antes de recompilar, si no vas a estar
+subiendo una versión vieja de la app.
 
 ## Para publicar en Google Play
 
 1. Instalá [Android Studio](https://developer.android.com/studio) (trae el SDK incluido)
    — o usá `sdkmanager` por línea de comandos como se hizo acá.
-2. `npx cap sync android`
+2. `npm run prepare:mobile && npx cap sync android`
 3. Abrí `android/` en Android Studio, o generá el paquete por consola:
    `cd android && ./gradlew bundleRelease` (Google Play pide un `.aab`, no un `.apk`).
 4. Generá una clave de firma (una sola vez, **guardala en un lugar seguro** — si la
@@ -58,15 +81,15 @@ una versión vieja de la app.
 5. Configurá la firma en Android Studio (Build → Generate Signed Bundle / APK) o en
    `android/app/build.gradle`.
 6. Creá una cuenta en [Google Play Console](https://play.google.com/console) (pago único
-   de USD 25), armá la ficha de la app (podés arrancar con `www/screenshot-1.png` y
-   `www/screenshot-2.png`, y la descripción de `www/manifest.json`), subí el `.aab` y
+   de USD 25), armá la ficha de la app (podés arrancar con `screenshot-1.png` y
+   `screenshot-2.png`, y la descripción de `manifest.json`), subí el `.aab` y
    mandala a revisión.
 
 ## Para publicar en el App Store
 
 1. Necesitás una **Mac con Xcode** — no hay forma de evitarlo, Apple no permite compilar
    ni firmar apps de iOS desde Linux.
-2. `npx cap sync ios`
+2. `npm run prepare:mobile && npx cap sync ios`
 3. `npx cap open ios` (abre el proyecto en Xcode).
 4. En Xcode: Signing & Capabilities → elegí tu equipo de Apple Developer (hace falta una
    cuenta paga de [Apple Developer Program](https://developer.apple.com/programs/), USD
