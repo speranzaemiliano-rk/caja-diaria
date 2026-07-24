@@ -376,6 +376,36 @@ tbody tr:last-child td{border-bottom:none}
      wrap. */
   .panel .ph{flex-wrap:wrap}
   .panel .ph>div:last-child{flex-wrap:wrap}
+  /* .wrap tenía el mismo padding lateral (40px) que en desktop: en un celular
+     de 390px eso son 80px (20% del ancho) perdidos antes de que arranque
+     cualquier contenido. Sumado al padding propio de cada panel/tarjeta y al
+     padding inline de "Gráficos históricos" (ver más abajo), dejaba columnas
+     angostas donde los textos largos y los números grandes de Análisis se
+     veían cortados (bug real, reportado por el usuario: "en analisis algunas
+     indicaciones queda afuera"). Se achica en mobile. */
+  .wrap{padding:20px 16px 56px}
+  /* "Gráficos históricos" en Análisis (adentro de #anaOldBody) arma su propio
+     padding con style inline (gana a cualquier regla sin !important) — se
+     achica también acá para no seguir restando ancho encima de .wrap. */
+  #anaOldBody>div{padding:16px 10px 20px!important}
+  /* "Principales conceptos", "Crédito vs. efectivo" y "Deuda por préstamos
+     entre empresas" arman su fila con una columna de nombre de ancho FIJO
+     (120px / 190px, ver .bar-row y sus style inline) para dejarle lugar a la
+     barra y al valor — en un celu angosto un concepto o nombre de empresa
+     largo no entra ahí y queda cortado con "…" aunque sobre espacio debajo
+     (bug real, confirmado con "Empresa B S.A. · Sucursal Centro" y conceptos
+     largos de cheque). Se apila: el nombre arriba (con todo el ancho
+     disponible, puede usar 2 líneas) y la barra + el valor abajo. */
+  #topConcepts .bar-row,#creditCashRatio .bar-row,#loanDebtRatio .bar-row{
+    grid-template-columns:1fr auto!important;
+    grid-template-areas:"nm nm" "bar val";
+    row-gap:6px;
+  }
+  #topConcepts .bar-row .nm,#creditCashRatio .bar-row .nm,#loanDebtRatio .bar-row .nm{
+    grid-area:nm;white-space:normal;overflow:visible;text-overflow:clip;
+  }
+  #topConcepts .bar-row .bar-track,#creditCashRatio .bar-row .bar-track,#loanDebtRatio .bar-row .bar-track{grid-area:bar}
+  #topConcepts .bar-row .val,#creditCashRatio .bar-row .val,#loanDebtRatio .bar-row .val{grid-area:val}
 }
 
 /* ---- bienvenida (el home, integrado arriba de la caja) ---- */
