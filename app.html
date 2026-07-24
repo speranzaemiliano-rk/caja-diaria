@@ -366,6 +366,16 @@ tbody tr:last-child td{border-bottom:none}
      vez de la 3ª, empujándolo a una fila nueva (bug real, visto en captura
      mobile). Un selector más específico lo corrige. */
   #fisMvList .mvrow .rmrow{grid-column:3}
+  /* Cabecera de panel (.ph, 16 usos en toda la app: título a la izquierda +
+     grupo de botones a la derecha, en una sola fila sin wrap). En "Movimientos
+     del día" pueden llegar a mostrarse varios botones juntos (☑ Seleccionar /
+     🖨 Imprimir / ＋ Agregar movimiento / ✎ Editar día) que ya no entran al
+     lado del título en una pantalla de celular — se salían del ancho de
+     pantalla en vez de acomodarse (bug real, visto con captura a 390px). Se
+     dejan apilar: el título arriba, los botones abajo en su propia fila con
+     wrap. */
+  .panel .ph{flex-wrap:wrap}
+  .panel .ph>div:last-child{flex-wrap:wrap}
 }
 
 /* ---- bienvenida (el home, integrado arriba de la caja) ---- */

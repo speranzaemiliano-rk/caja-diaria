@@ -1,4 +1,4 @@
-const CACHE = 'caja-diaria-v53';
+const CACHE = 'caja-diaria-v54';
 const ASSETS = ['./', './index.html', './app.html', './manifest.json', './icon-192.png', './icon-512.png', './biletes.avif'];
 
 self.addEventListener('install', e => {
