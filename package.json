@@ -2,9 +2,10 @@
   "name": "caja-diaria",
   "private": true,
   "version": "1.0.0",
-  "description": "Control de caja diaria — wrapper nativo (Capacitor) para App Store / Google Play. El sitio web en sí vive en www/ y no necesita build.",
+  "description": "Control de caja diaria — wrapper nativo (Capacitor) para App Store / Google Play. El sitio web en sí vive en la raíz del repo y no necesita build; ver MOBILE.md.",
   "scripts": {
-    "sync": "cap sync",
+    "prepare:mobile": "bash scripts/prepare-mobile-www.sh",
+    "sync": "npm run prepare:mobile && cap sync",
     "open:ios": "cap open ios",
     "open:android": "cap open android"
   },

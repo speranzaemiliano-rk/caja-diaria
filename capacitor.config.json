@@ -1,7 +1,7 @@
 {
   "appId": "com.cajadiaria.app",
   "appName": "Caja Diaria",
-  "webDir": "www",
+  "webDir": "mobile-www",
   "server": {
     "androidScheme": "https"
   }
