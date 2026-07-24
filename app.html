@@ -255,6 +255,21 @@ tbody tr:last-child td{border-bottom:none}
 .bar-fill{height:100%;border-radius:6px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
 .bar-row .val{font-family:'Roboto Mono';font-weight:600;font-size:12.5px;min-width:96px;text-align:right}
 .legend{display:flex;gap:18px;font-size:12px;color:var(--ink2);margin-top:14px;flex-wrap:wrap}
+/* Filas de "Presupuesto por concepto": a diferencia de .bar-row (grid con
+   columna de nombre de ancho fijo, que en mobile terminaba empujando la
+   barra/el valor fuera de pantalla — ver el fix de Análisis), acá se usa
+   flexbox con wrap desde el arranque: cada celda tiene un flex-basis, así
+   que en una pantalla angosta el nombre pasa solo a su propia línea sin
+   necesitar una media query aparte. */
+.bud-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.bud-row:last-child{border-bottom:none}
+.bud-row .nm{flex:1 1 130px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
+.bud-row .bar-track{flex:3 1 120px;min-width:80px}
+.bud-row .val{flex:0 0 auto;font-family:'Roboto Mono';font-weight:600;font-size:12.5px;white-space:nowrap}
+.bud-row .rowacts{flex:0 0 auto;display:flex;gap:4px}
+.cashproj{background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;max-width:560px}
+.cashproj .headline{font-size:15.5px;font-weight:700;line-height:1.35}
+.cashproj .meta{font-size:12.5px;color:var(--ink2);margin-top:8px;line-height:1.5}
 .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .note{font-size:12px;color:var(--ink3);margin-top:8px;line-height:1.6}
 .hl{color:var(--gold2);font-weight:600}
@@ -414,6 +429,14 @@ tbody tr:last-child td{border-bottom:none}
   }
   #topConcepts .bar-row .bar-track,#creditCashRatio .bar-row .bar-track,#loanDebtRatio .bar-row .bar-track{grid-area:bar}
   #topConcepts .bar-row .val,#creditCashRatio .bar-row .val,#loanDebtRatio .bar-row .val{grid-area:val}
+  /* "Presupuesto por concepto" (.bud-row) ya usa flexbox con wrap en vez de
+     grid, pero con flex-shrink normal el navegador prefiere encoger el
+     nombre hasta "…" antes que mandarlo a su propia línea (el wrap del
+     contenedor solo entra en juego cuando ya no hay margen para achicar
+     nada más) — incluso con nombres largos, nunca se ve el texto completo
+     en una pantalla angosta. flex-basis:100% fuerza a "nm" a ocupar toda la
+     fila y empuja la barra/el valor/los íconos a la línea de abajo. */
+  .bud-row .nm{flex:1 1 100%;white-space:normal;overflow:visible;text-overflow:clip}
 }
 
 /* ---- bienvenida (el home, integrado arriba de la caja) ---- */
@@ -622,6 +645,16 @@ tbody tr:hover{background:var(--panel2)}
         <div class="panel" style="margin-bottom:18px">
           <div class="ph"><div><h3>Deuda por préstamos entre empresas</h3><p>Cuánto debe cada empresa/proyecto a otras, comparado con su saldo actual</p></div></div>
           <div id="loanDebtRatio"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:18px">
+          <div class="ph"><div><h3>Presupuesto por concepto</h3><p>Tope mensual de gasto en la caja activa, por concepto</p></div></div>
+          <div id="budgetPanel"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:18px">
+          <div class="ph"><div><h3>Proyección de flujo de caja</h3><p>Estimación según el ritmo de los últimos días operados en esta caja</p></div></div>
+          <div id="cashProjection"></div>
         </div>
 
         <div class="month">
@@ -1600,8 +1633,112 @@ function renderLoanDebtRatio(){
       <div class="val mono" style="color:var(--red)">${r.pctDebt}% deuda</div>
     </div>`).join('')+'</div><p class="note"><span style="color:var(--blue)">■</span> Efectivo (saldo actual) &nbsp; <span style="color:var(--red)">■</span> Deuda por préstamos &nbsp;· cuánto debe cada empresa/proyecto a otras, comparado con su saldo actual.</p>';
 }
+/* ============ presupuesto por concepto ============ */
+// Un presupuesto = un tope mensual para un texto de "Concepto" (el mismo
+// campo libre que ya agrupa "Principales conceptos" en Gráficos históricos,
+// no una columna nueva en los movimientos — así no hay que tocar la grilla
+// del editor/quick-add, que ya está muy ajustada para mobile). Se guarda
+// por caja+moneda, igual que userDays, así que cambiar de empresa/proyecto
+// o de moneda muestra los presupuestos de esa caja puntual.
+function budgetsKey(){return 'caja_budgets_v1::'+activeContextId+'::'+CUR}
+function loadBudgets(){try{const r=localStorage.getItem(budgetsKey());return r?JSON.parse(r):[]}catch(e){return []}}
+function saveBudgets(arr){try{localStorage.setItem(budgetsKey(),JSON.stringify(arr))}catch(e){}}
+function addBudget(){
+  const concept=(prompt('¿Para qué concepto querés poner un tope mensual? Tiene que coincidir con el texto que usás en "Concepto" al cargar movimientos.')||'').trim();
+  if(!concept)return;
+  const limitStr=prompt('Tope mensual para "'+concept+'" (solo números):');
+  if(limitStr==null)return;
+  const limit=parseFloat(limitStr.replace(/\./g,'').replace(',','.'));
+  if(!limit||limit<=0){toast('Importe inválido');return}
+  const arr=loadBudgets();
+  arr.push({id:'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),concept,limit});
+  saveBudgets(arr);renderBudgetPanel();toast('Presupuesto agregado');
+}
+function editBudget(id){
+  const arr=loadBudgets();const b=arr.find(x=>x.id===id);if(!b)return;
+  const concept=(prompt('Concepto:',b.concept)||'').trim();
+  if(!concept)return;
+  const limitStr=prompt('Tope mensual:',String(b.limit));
+  if(limitStr==null)return;
+  const limit=parseFloat(limitStr.replace(/\./g,'').replace(',','.'));
+  if(!limit||limit<=0){toast('Importe inválido');return}
+  b.concept=concept;b.limit=limit;
+  saveBudgets(arr);renderBudgetPanel();toast('Presupuesto actualizado');
+}
+function deleteBudget(id){
+  if(!confirm('¿Eliminar este presupuesto?'))return;
+  saveBudgets(loadBudgets().filter(x=>x.id!==id));
+  renderBudgetPanel();
+}
+function renderBudgetPanel(){
+  const el=document.getElementById('budgetPanel');if(!el)return;
+  const arr=loadBudgets();
+  const addBtn='<button class="btn-ghost" onclick="addBudget()" style="margin-top:12px">＋ Nuevo presupuesto</button>';
+  if(!arr.length){el.innerHTML='<div class="empty-state">Todavía no definiste ningún presupuesto por concepto en esta caja</div>'+addBtn;return}
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth()+1;
+  const spent={};
+  real.filter(d=>d.y===y&&d.m===m).forEach(d=>(d.movs||[]).forEach(mv=>{
+    if(mv.imp>=0)return;
+    const key=(mv.cpt||'').trim().toLowerCase();
+    spent[key]=(spent[key]||0)+Math.abs(mv.imp);
+  }));
+  const rows=arr.map(b=>{
+    const sp=spent[b.concept.trim().toLowerCase()]||0;
+    return {b,sp,pct:Math.min(100,Math.round(sp/b.limit*100)),over:sp>b.limit+0.005};
+  });
+  const overCount=rows.filter(r=>r.over).length;
+  el.innerHTML=(overCount?`<p class="note" style="color:var(--red);font-weight:600;margin-bottom:10px">⚠ ${overCount} presupuesto${overCount>1?'s':''} superado${overCount>1?'s':''} este mes</p>`:'')
+    +rows.map(r=>`<div class="bud-row" title="${esc(r.b.concept)} · ${MESES[m-1]} ${y}">
+      <div class="nm">${esc(r.b.concept)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${r.pct}%;background:${r.over?'linear-gradient(90deg,#8a2323,var(--red))':'linear-gradient(90deg,#4a6a94,var(--blue))'}"></div></div>
+      <div class="val"${r.over?' style="color:var(--red)"':''}>${pesoCur(Math.round(r.sp),CUR)} / ${pesoCur(Math.round(r.b.limit),CUR)}</div>
+      <div class="rowacts"><button class="rowact" title="Editar presupuesto" onclick="editBudget('${r.b.id}')">✎</button><button class="rowact del" title="Eliminar presupuesto" onclick="deleteBudget('${r.b.id}')">${ic('trash',13)}</button></div>
+    </div>`).join('')
+    +addBtn
+    +'<p class="note">Compara lo gastado este mes calendario en ese concepto (movimientos de esta caja/moneda) contra el tope que definiste. <span style="color:var(--red)">Rojo</span> = te pasaste.</p>';
+}
+/* ============ proyección de flujo de caja ============ */
+// Estimación simple: cambio neto de saldo (ingresos-egresos) de los últimos
+// N días operados, dividido por los días de calendario que abarcan (no la
+// cantidad de días cargados, que pueden tener huecos) = promedio diario. Si
+// ese promedio es negativo y el saldo actual también, proyecta en cuántos
+// días se llegaría a $0 a ese ritmo. No pretende ser una proyección
+// financiera seria (no contempla estacionalidad ni gastos puntuales que se
+// repitan o no) — es una señal de alerta temprana, aclarado en el texto.
+function renderCashProjection(){
+  const el=document.getElementById('cashProjection');if(!el)return;
+  const WINDOW=30;
+  if(real.length<2){el.innerHTML='<div class="empty-state">Cargá al menos un par de días operados en esta caja para poder proyectar</div>';return}
+  const recent=real.slice(-WINDOW);
+  const f=recent[0],l=recent[recent.length-1];
+  const daysSpan=Math.max(1,Math.round((new Date(l.iso)-new Date(f.iso))/86400000));
+  const avgDaily=(l.sf-f.si)/daysSpan;
+  const saldo=last?(last.sf||0):0;
+  let headline,sub,cls;
+  if(saldo<=0.005){
+    headline='⚠ La caja ya está en $0 o en negativo';
+    sub='Saldo actual '+peso(saldo);
+    cls='neg';
+  }else if(avgDaily<-0.005){
+    const dias=Math.floor(saldo/(-avgDaily));
+    const fecha=new Date(last.iso+'T00:00:00');fecha.setDate(fecha.getDate()+dias);
+    headline=`⚠ A este ritmo, te quedás sin efectivo en ${dias} día${dias===1?'':'s'}`;
+    sub='Estimado para el '+fecha.toLocaleDateString('es-AR')+' · promedio de los últimos '+daysSpan+' días: '+pesoS(avgDaily)+'/día';
+    cls='neg';
+  }else{
+    headline='✓ Tu caja viene creciendo, sin quiebre proyectado';
+    sub='Promedio de los últimos '+daysSpan+' días: '+pesoS(avgDaily)+'/día';
+    cls='pos';
+  }
+  el.innerHTML=`<div class="cashproj">
+      <div class="headline ${cls}">${headline}</div>
+      <div class="meta">${sub}</div>
+      <div class="meta">Saldo actual: <b>${peso(saldo)}</b></div>
+    </div>
+    <p class="note">Proyección simple a partir del cambio neto de saldo de los últimos ${daysSpan} días de calendario — no contempla estacionalidad ni movimientos puntuales grandes que puedan repetirse o no.</p>`;
+}
 function renderAnalytics(){
-  renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();renderLoanDebtRatio();
+  renderCtxSummaryCards();renderAnaLoanDetail();renderCreditCashRatio();renderLoanDebtRatio();renderBudgetPanel();renderCashProjection();
   const avgDay=totMov/(real.length||1);
   const bigDay=real.length?real.slice().sort((a,b)=>((b.ing||0)+(b.egr||0))-((a.ing||0)+(a.egr||0)))[0]:null;
   document.getElementById('anaKpis').innerHTML=`
