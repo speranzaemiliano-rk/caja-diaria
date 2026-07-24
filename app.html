@@ -276,7 +276,15 @@ tbody tr:last-child td{border-bottom:none}
      siempre visible por ser la acción principal. */
   .actions-more-btn{display:inline-flex!important;font-size:20px;font-weight:700;line-height:1;padding:10px 16px}
   .actions-secondary{
-    display:none!important;position:absolute;top:calc(100% + 8px);right:0;
+    /* left:0 (no right:0): ".actions" contiene el botón "⋯" Y "＋ Nuevo día"
+       juntos, así que "right:0" alineaba el menú con el borde derecho de
+       "＋ Nuevo día" en vez del botón "⋯" que lo abre — con el menú
+       (min-width 220px) más ancho que ".actions" mismo, se iba 18px afuera
+       del borde izquierdo de la pantalla (bug real, reportado: "cuando
+       apreto los tres puntos... quedan desfazados"). Con left:0 el menú
+       arranca en el borde izquierdo de ".actions", que coincide con el
+       botón "⋯" (primer hijo). */
+    display:none!important;position:absolute;top:calc(100% + 8px);left:0;
     flex-direction:column;gap:4px;background:var(--panel);border:1px solid var(--line);
     border-radius:14px;box-shadow:var(--shadow);padding:8px;min-width:220px;z-index:60;
   }
