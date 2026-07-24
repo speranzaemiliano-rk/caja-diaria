@@ -565,6 +565,7 @@ tbody tr:hover{background:var(--panel2)}
           <button class="btn-ghost" id="excelBtn" title="Descargar Excel (.xlsx) con todas las cajas">⬇ Excel</button>
           <button class="btn-ghost" id="syncBtn" title="Sincronizar la caja entre dispositivos (nube)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.6 1.8A4 4 0 0 0 6.5 19h11z"/></svg> Nube</button>
           <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo (.json que la app puede volver a cargar)">⤓ Respaldo</button>
+          <button class="btn-ghost" id="notifBtn" title="Recordatorio diario para cargar el cierre del día (solo en la app instalada)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg> Notificación diaria</button>
         </div>
         <button class="btn-primary" id="newDayBtn">＋ Nuevo día</button>
       </div>
@@ -816,7 +817,9 @@ const ICON_SVG={
   list:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/>',
   chart:'<path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 12L12 12L12 3"/>',
   search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
-  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  fingerprint:'<path d="M12 11c0 3.5-.5 6.5-2 9"/><path d="M7 20a13 13 0 0 0 2-8 3 3 0 0 1 6 0c0 1 0 2-.3 3.5"/><path d="M3.3 15a17 17 0 0 0 1-5 7.7 7.7 0 0 1 15.4 0 17 17 0 0 0 1 5"/><path d="M17 20.4a15 15 0 0 0 1.6-4.4"/>'
 };
 const ic=(name,size)=>`<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0">${ICON_SVG[name]||''}</svg>`;
 const tip=document.getElementById('tip');
@@ -1111,6 +1114,7 @@ function renderAll(){
   fillYearSelects();renderIndex();
   renderAnalytics();drawWeekday();renderMovs();
   renderWarnBanner();
+  scheduleArqueoNotif();
 }
 // Alarma de diferencia de caja grande: visible siempre, arriba de todo (no
 // solo en Análisis), para cualquier empresa/proyecto/moneda con un descuadre
@@ -1926,10 +1930,47 @@ function deleteCreditNoteEntry(iso,idx){
   cascadeChain(activeContextId,CUR,userDays);
   saveUser();renderAll();renderCreditDetailModal();toast('Ajuste eliminado');
 }
+// Huella digital / Face ID como método alternativo a tipear la clave —
+// SIEMPRE pide verificación de nuevo (no es un desbloqueo persistente: eso
+// se probó antes y el usuario pidió explícitamente volver atrás, ver bullet
+// de protección de créditos), solo cambia CÓMO se verifica cada vez. Usa
+// @capgo/capacitor-native-biometric, que registra un plugin nativo simple
+// (`Capacitor.Plugins.NativeBiometric`) sin necesitar import/bundler, igual
+// que @capacitor/local-notifications (ver notificación diaria de arqueo).
+const CREDIT_BIO_KEY='caja_credit_biometric_v1';
+function creditBiometricEnabled(){return localStorage.getItem(CREDIT_BIO_KEY)==='1'}
+async function biometricAvailable(){
+  if(!isNativeApp())return false;
+  try{
+    const NB=window.Capacitor.Plugins.NativeBiometric;
+    const avail=await NB.isAvailable();
+    return !!(avail&&avail.isAvailable);
+  }catch(e){return false}
+}
+async function tryBiometricUnlock(){
+  try{
+    const NB=window.Capacitor.Plugins.NativeBiometric;
+    await NB.verifyIdentity({reason:'Ver créditos a cobrar',title:'Caja Diaria',subtitle:'Confirmá tu identidad para ver el detalle de créditos'});
+    return true; // verifyIdentity rechaza la promesa si falla, cancela o no hay huella reconocida
+  }catch(e){return false}
+}
+// Se ofrece una sola vez, justo después de configurar/cambiar la clave (ahí
+// es donde tiene sentido preguntarlo) — si ya está activada no se vuelve a
+// preguntar, y si el usuario dice que no simplemente sigue usando la clave.
+async function offerCreditBiometric(){
+  if(creditBiometricEnabled())return;
+  if(!(await biometricAvailable()))return;
+  if(confirm('¿Querés poder ver los créditos con tu huella digital / Face ID en vez de tipear la clave? Si falla o no la reconoce, siempre vas a poder usar la clave igual.')){
+    try{localStorage.setItem(CREDIT_BIO_KEY,'1')}catch(e){}
+    toast('Huella digital activada para ver créditos');
+  }
+}
 // Pide la clave de créditos (o la crea si todavía no existe) y devuelve
 // true recién cuando quedó realmente desbloqueada — usado tanto por el botón
 // "Ver" del detalle acumulado como por el de la lista de ajustes del editor.
-function askCreditPin(enterMsg){
+// Si la huella está activada, se intenta primero; si falla/cancela, cae al
+// prompt() de la clave de siempre (nunca deja sin forma de entrar).
+async function askCreditPin(enterMsg){
   const pin=creditPin();
   if(!pin){
     const setPin=(prompt('Todavía no configuraste una clave para ver los créditos.\n\nElegí una clave (mínimo 4 caracteres) para protegerlos:')||'').trim();
@@ -1937,22 +1978,25 @@ function askCreditPin(enterMsg){
     if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return false}
     try{localStorage.setItem(CREDIT_PIN_KEY,setPin)}catch(e){}
     toast('Clave configurada · tocá "Ver" de nuevo para entrar');
+    offerCreditBiometric();
     return false;
   }
+  if(creditBiometricEnabled()&&await tryBiometricUnlock())return true;
   const entered=prompt(enterMsg);
   if(entered==null)return false;
   if(entered!==pin){toast('Clave incorrecta');return false}
   return true;
 }
-function openCreditDetail(){
-  if(askCreditPin('Clave para ver el detalle de créditos:'))renderCreditDetailModal();
+async function openCreditDetail(){
+  if(await askCreditPin('Clave para ver el detalle de créditos:'))renderCreditDetailModal();
 }
-function changeCreditPin(){
+async function changeCreditPin(){
   const setPin=(prompt('Nueva clave (mínimo 4 caracteres):')||'').trim();
   if(!setPin)return;
   if(setPin.length<4){toast('La clave tiene que tener al menos 4 caracteres');return}
   try{localStorage.setItem(CREDIT_PIN_KEY,setPin)}catch(e){}
   toast('Clave actualizada');
+  offerCreditBiometric();
 }
 function renderCreditDetailModal(){
   const ctx=activeContext(),sym=CUR_SYM[CUR];
@@ -2490,8 +2534,8 @@ function renderCredMovRows(){
     row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
 }
-function unlockCreditRows(){
-  if(askCreditPin('Clave para ver los conceptos de crédito ya guardados:')){
+async function unlockCreditRows(){
+  if(await askCreditPin('Clave para ver los conceptos de crédito ya guardados:')){
     credRowsUnlocked=true;
     renderCredMovRows();
   }
@@ -3167,6 +3211,91 @@ function openSyncSettings(){
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
 document.getElementById('syncBtn').onclick=openSyncSettings;
+
+/* ============ notificación diaria de arqueo (app nativa) ============ */
+// Reusa el runtime de Capacitor que el wrapper nativo (ver MOBILE.md) inyecta
+// solo en Android/iOS instalados — Capacitor.Plugins.<Plugin> queda disponible
+// automáticamente sin import ni bundler, así que este mismo app.html sin build
+// sigue sirviendo tal cual para el sitio web (donde window.Capacitor no
+// existe y todo esto queda inerte). El plugin @capacitor/local-notifications
+// solo se declara como dependencia de npm para que `npx cap sync` lo empaquete
+// en los proyectos android/ios — no hace falta tocar nada más acá.
+const NOTIF_ENABLED_KEY='caja_notif_enabled_v1',NOTIF_HOUR_KEY='caja_notif_hour_v1',ARQUEO_NOTIF_ID=90001;
+function isNativeApp(){return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform())}
+function notifEnabled(){return localStorage.getItem(NOTIF_ENABLED_KEY)==='1'}
+function notifHour(){const h=parseInt(localStorage.getItem(NOTIF_HOUR_KEY)||'20',10);return isNaN(h)?20:h}
+async function ensureNotifPermission(){
+  try{
+    const LN=window.Capacitor.Plugins.LocalNotifications;
+    const cur=await LN.checkPermissions();
+    if(cur.display==='granted')return true;
+    const req=await LN.requestPermissions();
+    return req.display==='granted';
+  }catch(e){return false}
+}
+// Se llama desde renderAll(), o sea después de cualquier alta/baja/edición de
+// día: si hoy ya se cargó, cancela el aviso pendiente (nada que recordar); si
+// no, (re)programa un único aviso para la hora elegida (hoy si todavía no
+// pasó, si no mañana). No es un recordatorio recurrente de "todos los días a
+// las X" fijo en el sistema operativo — se recalcula cada vez que se abre la
+// app, así que si nunca se vuelve a abrir después de la última carga, el
+// último aviso programado igual llega (mismo principio que ya se documentó
+// para `dailyBackup` vs. depender de abrir la app).
+async function scheduleArqueoNotif(){
+  if(!isNativeApp())return;
+  try{
+    const LN=window.Capacitor.Plugins.LocalNotifications;
+    await LN.cancel({notifications:[{id:ARQUEO_NOTIF_ID}]});
+    if(!notifEnabled())return;
+    const perm=await LN.checkPermissions();
+    if(perm.display!=='granted')return; // no interrumpimos con el prompt acá — eso pasa solo al activarlo desde el modal
+    if(userDays.some(d=>d.iso===todayIso()))return; // hoy ya está cargado en la caja activa, nada que avisar
+    const hour=notifHour(),now=new Date();
+    let at=new Date(now.getFullYear(),now.getMonth(),now.getDate(),hour,0,0,0);
+    if(at<=now)at.setDate(at.getDate()+1);
+    await LN.schedule({notifications:[{id:ARQUEO_NOTIF_ID,title:'Caja Diaria',body:'Todavía no cargaste el cierre de hoy en '+ctxLabel(activeContext())+' · '+CUR+'.',schedule:{at}}]});
+  }catch(e){/* plugin no disponible o falló el bridge nativo: no rompemos el resto de la app */}
+}
+function openNotifSettings(){
+  const native=isNativeApp(),on=notifEnabled(),hour=notifHour();
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">${ic('bell',24)}</div>
+      <div><h3>Notificación diaria de arqueo</h3><div class="msub">Te avisa en el celular si todavía no cargaste el cierre de hoy en la caja activa.</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      ${native?`
+        <div class="field"><label>Recordatorio</label>
+          <div class="seg" id="nf_seg"><button type="button" data-v="0" class="${on?'':'on'}">Apagado</button><button type="button" data-v="1" class="${on?'on':''}">Prendido</button></div>
+        </div>
+        <div class="field" style="margin-top:14px"><label>Hora del aviso</label>
+          <select id="nf_hour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===hour?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select>
+        </div>
+        <p style="font-size:12.5px;color:var(--ink3);margin-top:12px">Si a esa hora todavía no cargaste el día de hoy en <b>${esc(ctxLabel(activeContext()))} · ${CUR}</b>, te llega una notificación. Si ya lo cargaste, no te molesta.</p>
+        <div id="nf_err" class="errline" style="margin-top:8px"></div>
+      `:`
+        <div class="empty-state">Esta función solo está disponible en la app instalada (Android/iOS), no en el navegador.<br><br>Instalá la app desde "⇩ Instalar app" o desde la tienda para poder activarla.</div>
+      `}
+    </div>
+    ${native?'<div class="ed-foot"><div class="del"></div><div style="margin-left:auto;display:flex;gap:10px"><button class="btn-ghost" type="button" onclick="closeModal()">Cerrar</button><button class="btn-primary" type="button" id="nf_save">Guardar</button></div></div>':''}`;
+  if(native){
+    let sel=on?1:0;
+    document.querySelectorAll('#nf_seg button').forEach(b=>b.onclick=()=>{sel=+b.dataset.v;document.querySelectorAll('#nf_seg button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
+    document.getElementById('nf_save').onclick=async()=>{
+      const err=document.getElementById('nf_err');err.textContent='';
+      const h=parseInt(document.getElementById('nf_hour').value,10);
+      if(sel){
+        const granted=await ensureNotifPermission();
+        if(!granted){err.textContent='No se pudo activar: falta el permiso de notificaciones (revisá los permisos de la app en el sistema).';return}
+      }
+      try{localStorage.setItem(NOTIF_ENABLED_KEY,sel?'1':'0');localStorage.setItem(NOTIF_HOUR_KEY,String(h))}catch(e){}
+      await scheduleArqueoNotif();
+      toast(sel?'✓ Recordatorio activado':'Recordatorio desactivado');
+      closeModal();
+    };
+  }
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+document.getElementById('notifBtn').onclick=openNotifSettings;
 
 /* ============ init ============ */
 renderCtxSelectors();
