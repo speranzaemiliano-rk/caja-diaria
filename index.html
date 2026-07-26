@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Caja Diaria · Control de caja para tu comercio</title>
 <meta name="description" content="Registrá ingresos y egresos, mirá el saldo en vivo y llevá el control de tu caja diaria. Sincronizada en todos tus dispositivos.">
-<meta name="theme-color" content="#0a0b0d">
+<meta name="theme-color" content="#0A0D14">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -17,21 +17,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0a0b0d; --bg2:#111318; --surface:#14161d; --surface2:#191c24;
-    --ink:#f3f5f8; --ink2:#aab2c0; --ink3:#6b7382;
-    --line:#23262f; --line2:#2d313c;
-    --accent:#6aa5ff; --accent2:#4d90fe;
+    --bg:#0A0D14; --bg2:#0d1019; --surface:#141926; --surface2:#1a2033;
+    --ink:#EAE4FF; --ink2:#aca8c9; --ink3:#6f6c8a;
+    --line:#252D42; --line2:#323a56;
+    --accent:#9E86FF; --accent2:#7C5CFF;
     --serif:'Fraunces',ui-serif,'Iowan Old Style',Georgia,serif;
     --sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
     --mono:'Roboto Mono',ui-monospace,monospace;
     --maxw:1140px;
-    /* rampa metálica (acero frío), oscuro→claro por magnitud */
-    --s1:#454c5c; --s2:#59657c; --s3:#74839b; --s4:#9aa9c0; --s5:#d6dfec;
+    /* rampa de marca (violeta→lila), oscuro→claro por magnitud */
+    --s1:#4B3A8C; --s2:#6247B8; --s3:#7C5CFF; --s4:#9E86FF; --s5:#D9CFFF;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;
-    background-image:radial-gradient(120% 80% at 78% -8%,rgba(106,165,255,.10),transparent 60%),radial-gradient(90% 60% at -10% 20%,rgba(120,131,155,.08),transparent 55%)}
+    background-image:radial-gradient(120% 80% at 78% -8%,rgba(124,92,255,.14),transparent 60%),radial-gradient(90% 60% at -10% 20%,rgba(34,211,238,.08),transparent 55%)}
   a{color:inherit;text-decoration:none}
   .wrap{max-width:var(--maxw);margin-inline:auto;padding-inline:clamp(20px,5vw,44px)}
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
@@ -39,7 +39,7 @@
 
   /* botones */
   .btn{display:inline-flex;align-items:center;gap:8px;font-family:inherit;font-size:15px;font-weight:600;border-radius:100px;padding:12px 24px;cursor:pointer;border:1px solid transparent;transition:.16s;white-space:nowrap}
-  .btn-primary{background:linear-gradient(180deg,#f6f8fb,#cdd6e3);color:#0a0b0d;box-shadow:0 8px 26px -12px rgba(214,223,236,.5)}
+  .btn-primary{background:linear-gradient(180deg,#f6f8fb,#cdd6e3);color:#0A0D14;box-shadow:0 8px 26px -12px rgba(214,223,236,.5)}
   .btn-primary:hover{transform:translateY(-1px);box-shadow:0 12px 30px -12px rgba(214,223,236,.6)}
   .btn-ghost{background:transparent;color:var(--ink);border-color:var(--line2)}
   .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
@@ -47,18 +47,20 @@
   .btn-text:hover{color:var(--ink)}
 
   /* topbar */
-  header.top{position:sticky;top:0;z-index:40;background:rgba(10,11,13,.72);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+  header.top{position:sticky;top:0;z-index:40;background:rgba(10,13,20,.72);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
   .top .row{display:flex;align-items:center;justify-content:space-between;height:66px;gap:16px}
   .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:18px;letter-spacing:-.2px}
-  .brand .mk{width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#e9eef5,#aab6c8);color:#0a0b0d;display:grid;place-items:center;font-size:17px;box-shadow:inset 0 1px 1px rgba(255,255,255,.6),0 4px 12px -6px rgba(0,0,0,.6)}
+  .brand .mk{width:34px;height:34px;display:grid;place-items:center;flex-shrink:0}
+  .brand .mk img{width:100%;height:100%}
   .topnav{display:flex;align-items:center;gap:6px}
   .topnav a.lnk{font-size:14.5px;color:var(--ink2);padding:9px 14px;border-radius:8px}
   .topnav a.lnk:hover{background:var(--surface);color:var(--ink)}
   @media(max-width:640px){.topnav .lnk{display:none}}
 
   /* hero */
-  .hero{padding:clamp(30px,5vw,58px) 0 clamp(34px,5vw,60px);position:relative}
-  .hero .grid{display:grid;grid-template-columns:1fr 1.05fr;gap:clamp(28px,4vw,56px);align-items:center}
+  .hero{padding:clamp(30px,5vw,58px) 0 clamp(34px,5vw,60px);position:relative;overflow:clip}
+  .hero-mark{position:absolute;top:clamp(-40px,-4vw,-10px);right:clamp(-30px,0vw,10px);width:clamp(160px,20vw,260px);opacity:.5;pointer-events:none;z-index:0}
+  .hero .grid{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1.05fr;gap:clamp(28px,4vw,56px);align-items:center}
   @media(max-width:920px){.hero .grid{grid-template-columns:1fr;gap:20px}}
   .kick{display:inline-flex;align-items:center;gap:9px;font-size:12px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--ink2);margin-bottom:20px}
   .kick i{width:24px;height:1.5px;background:var(--ink3);display:block}
@@ -91,7 +93,7 @@
   @media(max-width:520px){.feats{grid-template-columns:1fr}}
   .feat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 22px;transition:.18s}
   .feat:hover{border-color:var(--line2);transform:translateY(-2px);box-shadow:0 18px 40px -24px rgba(0,0,0,.8)}
-  .feat .fi{width:44px;height:44px;border-radius:12px;background:linear-gradient(145deg,#20242e,#161922);border:1px solid var(--line2);color:var(--accent);display:grid;place-items:center;margin-bottom:16px}
+  .feat .fi{width:44px;height:44px;border-radius:12px;background:linear-gradient(145deg,#232a42,#171b2e);border:1px solid var(--line2);color:var(--accent);display:grid;place-items:center;margin-bottom:16px}
   .feat .fi svg{width:22px;height:22px}
   .feat h3{font-size:1.06rem;font-weight:600;margin-bottom:7px}
   .feat p{font-size:.95rem;color:var(--ink2)}
@@ -103,8 +105,8 @@
   .step h3{font-size:1.2rem;font-weight:600;margin:9px 0 8px}
   .step p{color:var(--ink2);font-size:.98rem}
 
-  .band{margin-top:clamp(40px,6vw,64px);border-radius:24px;background:linear-gradient(140deg,#171b24,#0e1017);border:1px solid var(--line2);padding:clamp(38px,6vw,62px) clamp(26px,5vw,54px);position:relative;overflow:hidden}
-  .band::after{content:'';position:absolute;inset:auto -10% -60% auto;width:60%;height:120%;background:radial-gradient(closest-side,rgba(106,165,255,.16),transparent);pointer-events:none}
+  .band{margin-top:clamp(40px,6vw,64px);border-radius:24px;background:linear-gradient(140deg,#1a1e33,#0c0e18);border:1px solid var(--line2);padding:clamp(38px,6vw,62px) clamp(26px,5vw,54px);position:relative;overflow:hidden}
+  .band::after{content:'';position:absolute;inset:auto -10% -60% auto;width:60%;height:120%;background:radial-gradient(closest-side,rgba(124,92,255,.18),transparent);pointer-events:none}
   .band h2{font-family:var(--serif);font-weight:500;font-size:clamp(1.7rem,3.4vw,2.4rem);letter-spacing:-.4px;text-wrap:balance;margin-bottom:12px;max-width:20ch}
   .band p{color:var(--ink2);font-size:1.06rem;margin-bottom:26px;max-width:46ch}
 
@@ -114,11 +116,11 @@
   .foot .lks a:hover{color:var(--ink)}
 </style>
 </head>
-<body data-palette="#454c5c,#59657c,#74839b,#9aa9c0,#d6dfec">
+<body data-palette="#4B3A8C,#6247B8,#7C5CFF,#9E86FF,#D9CFFF">
   <header class="top">
     <div class="wrap row">
       <a class="brand" href="./">
-        <span class="mk" aria-hidden="true">$</span> Caja Diaria
+        <span class="mk" aria-hidden="true"><img src="logo.svg" alt=""></span> Caja Diaria
       </a>
       <nav class="topnav">
         <a class="lnk" href="#funciones">Funciones</a>
@@ -130,6 +132,7 @@
 
   <main>
     <section class="hero">
+      <img class="hero-mark" src="logo.svg" alt="" aria-hidden="true">
       <div class="wrap grid">
         <div>
           <span class="kick"><i></i> Panorama de tu caja</span>
@@ -213,7 +216,7 @@
 
   <footer class="foot">
     <div class="wrap row">
-      <div class="brand" style="font-size:16px"><span class="mk" style="width:28px;height:28px;font-size:14px" aria-hidden="true">$</span> Caja Diaria</div>
+      <div class="brand" style="font-size:16px"><span class="mk" style="width:28px;height:28px" aria-hidden="true"><img src="logo.svg" alt=""></span> Caja Diaria</div>
       <div class="lks">
         <a href="#funciones">Funciones</a>
         <a href="#como">Cómo funciona</a>
