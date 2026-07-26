@@ -2811,9 +2811,12 @@ function maybeAutoBackup(){
 // y dailyBackup (lee la nube directo por HTTP con un disparador diario de Apps
 // Script — corre solo en el servidor de Google, sin depender de abrir la app).
 function appsScriptCode(email){
-  const cfg=syncCfg()||DEFAULT_FIREBASE_CONFIG;
-  const code=syncCode()||DEFAULT_SYNC_CODE;
   const em=(email||localStorage.getItem(BACKUP_EMAIL_KEY)||'').trim()||'tu@email.com';
+  // Antes esto también generaba un dailyBackup que corría en el servidor de Google
+  // y leía la caja de la nube por HTTP. Funcionaba porque la caja era legible por
+  // cualquiera: creaba un usuario anónimo y entraba con el código de caja. Ahora la
+  // caja es privada de tu cuenta, así que ese camino ya no existe —ni debería—.
+  // Queda el respaldo que empuja el navegador al abrir la app, que es seguro.
   return [
     'function doPost(e){',
     '  var d = JSON.parse(e.postData.contents);',
@@ -2823,33 +2826,8 @@ function appsScriptCode(email){
     '  return ContentService.createTextOutput("ok");',
     '}',
     '',
-    '// ---- Respaldo diario automático: corre solo en el servidor de Google, no',
-    '// depende de que abras la app. Requiere agregar un disparador (ver guía). ----',
-    'var FIREBASE_API_KEY = '+JSON.stringify(cfg.apiKey)+';',
-    'var FIREBASE_PROJECT_ID = '+JSON.stringify(cfg.projectId)+';',
-    'var SYNC_CODE = '+JSON.stringify(code)+';',
-    'var BACKUP_EMAIL = '+JSON.stringify(em)+';',
-    '',
-    'function dailyBackup(){',
-    '  var authRes = UrlFetchApp.fetch(',
-    '    "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + FIREBASE_API_KEY,',
-    '    {method:"post",contentType:"application/json",payload:JSON.stringify({returnSecureToken:true})}',
-    '  );',
-    '  var idToken = JSON.parse(authRes.getContentText()).idToken;',
-    '',
-    '  var docUrl = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID +',
-    '    "/databases/(default)/documents/cajas/" + encodeURIComponent(SYNC_CODE);',
-    '  var docRes = UrlFetchApp.fetch(docUrl, {headers:{Authorization:"Bearer "+idToken}});',
-    '  var doc = JSON.parse(docRes.getContentText());',
-    '  var json = doc.fields && doc.fields.backupJson && doc.fields.backupJson.stringValue;',
-    '  if (!json) throw new Error("No se encontró backupJson en el documento de la nube.");',
-    '',
-    '  var today = new Date().toISOString().slice(0,10);',
-    '  GmailApp.sendEmail(BACKUP_EMAIL, "Respaldo diario · Mess Caja · " + today,',
-    '    "Respaldo automático (servidor) del " + today + ". Adjunto: respaldo_completo_" + today + ".json — se puede volver a cargar en la app con Respaldo → Importar.",',
-    '    {attachments:[Utilities.newBlob(json, "application/json", "respaldo_completo_"+today+".json")]}',
-    '  );',
-    '}'
+    '// Respaldo de ' + em,
+    '// Se dispara cuando abrís la app, no hace falta configurar disparadores.'
   ].join('\n');
 }
 function openBackupSettings(){
@@ -3046,55 +3024,37 @@ function downloadExcel(){
 }
 document.getElementById('excelBtn').onclick=downloadExcel;
 
-/* ============ Sincronización en la nube (Firebase, opcional) ============ */
-const SYNC_CFG_KEY='caja_sync_cfg_v1',SYNC_CODE_KEY='caja_sync_code_v1',SYNC_ENABLED_KEY='caja_sync_enabled_v1',DEVICE_ID_KEY='caja_device_id_v1';
-/* Config fija embebida: la app sincroniza sola en cualquier navegador/dispositivo,
-   sin pedir configuración manual. El firebaseConfig no es secreto (está pensado
-   para ir en el cliente); el "código de caja" queda fijo acá adentro para que
-   todos los navegadores compartan automáticamente la misma caja. */
-const DEFAULT_FIREBASE_CONFIG={apiKey:"AIzaSyBznKJ6ApAum89CZ4kuBSnk7AynjQk-hI0",authDomain:"rk-cajadiaria-5-6.firebaseapp.com",projectId:"rk-cajadiaria-5-6",storageBucket:"rk-cajadiaria-5-6.firebasestorage.app",messagingSenderId:"307357693657",appId:"1:307357693657:web:75179c8df7e1139972b0c8"};
-const DEFAULT_SYNC_CODE='Ugarte2079*';
-const PREV_DEFAULT_SYNC_CODE='rk-cajadiaria-principal-5f8k2q';
-const SYNC_AUTOINIT_KEY='caja_sync_autoinit_v1';
-function ensureDefaultSync(){
-  // Migración: si un navegador ya se había auto-conectado con el código default
-  // anterior (antes de fijar el código real), lo corrige para que coincida con
-  // la caja real y deje de sincronizar contra un documento distinto/vacío.
-  try{
-    if(localStorage.getItem(SYNC_CODE_KEY)===PREV_DEFAULT_SYNC_CODE && DEFAULT_SYNC_CODE!==PREV_DEFAULT_SYNC_CODE){
-      localStorage.setItem(SYNC_CODE_KEY,DEFAULT_SYNC_CODE);
-      _syncReady=false;if(_unsub){_unsub();_unsub=null}
-    }
-  }catch(e){}
-  try{if(localStorage.getItem(SYNC_AUTOINIT_KEY)==='1')return}catch(e){return}
-  try{
-    localStorage.setItem(SYNC_AUTOINIT_KEY,'1');
-    if(!syncCfg())localStorage.setItem(SYNC_CFG_KEY,JSON.stringify(DEFAULT_FIREBASE_CONFIG));
-    if(!syncCode())localStorage.setItem(SYNC_CODE_KEY,DEFAULT_SYNC_CODE);
-    if(localStorage.getItem(SYNC_ENABLED_KEY)==null)localStorage.setItem(SYNC_ENABLED_KEY,'1');
-  }catch(e){}
-}
-function syncCfg(){try{return JSON.parse(localStorage.getItem(SYNC_CFG_KEY)||'null')}catch(e){return null}}
-function syncCode(){return (localStorage.getItem(SYNC_CODE_KEY)||'').trim()}
-function syncOn(){return localStorage.getItem(SYNC_ENABLED_KEY)==='1'}
-function syncEnabled(){return syncOn()&&!!syncCfg()&&!!syncCode()}
+/* ============ Cuenta y sincronización (Mess) ============ */
+/* La caja sincroniza contra el MISMO Firebase que el sistema de gestión y con el
+   MISMO usuario: una sola cuenta para las dos apps.
+
+   Antes se conectaba con un "código de caja" fijo escrito en este archivo. Como
+   el archivo se sirve público, cualquiera podía leerlo, entrar de forma anónima
+   y leer o escribir la caja. Eso ya no existe: los datos viven en
+   cajaDiaria/<uid> y sólo los ve el usuario dueño. */
+const DEVICE_ID_KEY='caja_device_id_v1';
+const MESS_FIREBASE_CONFIG={apiKey:"AIzaSyBfLKi3a6kZqkMKPQ8wRADQlUu3_NacXAA",authDomain:"modo-prueba-bb8c2.firebaseapp.com",databaseURL:"https://modo-prueba-bb8c2-default-rtdb.firebaseio.com",projectId:"modo-prueba-bb8c2",storageBucket:"modo-prueba-bb8c2.firebasestorage.app",messagingSenderId:"443608105017",appId:"1:443608105017:web:e229aca1305f72fa900de8"};
+const CAJA_RUTA='cajaDiaria';
+
 function deviceId(){let d=localStorage.getItem(DEVICE_ID_KEY);if(!d){d='dev_'+Math.random().toString(36).slice(2)+'_'+Date.now().toString(36);try{localStorage.setItem(DEVICE_ID_KEY,d)}catch(e){}}return d}
-let _fbApp=null,_db=null,_unsub=null,_applyingRemote=false,_pushTimer=null,_syncReady=false;
-function setSyncBadge(txt){const b=document.getElementById('syncBtn');if(b)b.title=txt||'Sincronizar la caja entre dispositivos (nube)'}
+let _db=null,_ref=null,_applyingRemote=false,_pushTimer=null,_syncReady=false,_user=null;
+function setSyncBadge(txt){const b=document.getElementById('syncBtn');if(b)b.title=txt||'Tu cuenta y la sincronización'}
+function usuarioActual(){return _user}
+
 function loadFirebase(){
-  if(window.firebase&&window.firebase.firestore)return Promise.resolve();
+  if(window.firebase&&window.firebase.database)return Promise.resolve();
   const base='https://www.gstatic.com/firebasejs/10.12.2/';
-  return ['firebase-app-compat.js','firebase-auth-compat.js','firebase-firestore-compat.js']
+  return ['firebase-app-compat.js','firebase-auth-compat.js','firebase-database-compat.js']
     .reduce((p,f)=>p.then(()=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=base+f;s.onload=res;s.onerror=()=>rej(new Error('no se pudo cargar Firebase (¿sin internet?)'));document.head.appendChild(s)})),Promise.resolve());
 }
+function initFirebase(){
+  if(!(firebase.apps&&firebase.apps.length))firebase.initializeApp(MESS_FIREBASE_CONFIG);
+  return firebase.app();
+}
+
 function cloudPayload(){
   const raw=fullBackupPayload();
-  const p={...raw,updatedBy:deviceId(),updatedAt:Date.now()};
-  // Copia plana del respaldo como string: así un script del lado del servidor
-  // (Google Apps Script con un disparador diario) puede leerlo por HTTP sin
-  // tener que interpretar el formato de campos tipados de Firestore.
-  p.backupJson=JSON.stringify(raw);
-  return p;
+  return {...raw,updatedBy:deviceId(),updatedAt:Date.now()};
 }
 function applyRemote(d){
   _applyingRemote=true;
@@ -3106,111 +3066,135 @@ function applyRemote(d){
   try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();renderCtxSelectors();renderAll();}catch(e){}
   _applyingRemote=false;
 }
-function schedulePush(){
-  if(!_syncReady||_applyingRemote||!_db)return;
-  clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(()=>{try{_db.collection('cajas').doc(syncCode()).set(cloudPayload())}catch(e){}},900);
+/* Cuántos días cargados tiene un paquete. Sirve para no pisar la caja de la nube
+   con una vacía: si abrís la app en un dispositivo nuevo (sin datos locales) y
+   subiéramos igual, borraríamos todo lo cargado desde los otros. */
+function _diasEn(p){
+  let n=0;
+  try{const d=(p&&p.data)||{};Object.keys(d).forEach(id=>['ARS','USD'].forEach(cur=>{const a=(d[id]||{})[cur];if(Array.isArray(a))n+=a.length}))}catch(e){}
+  return n;
 }
+function schedulePush(){
+  if(!_syncReady||_applyingRemote||!_ref)return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(()=>{try{_ref.set(cloudPayload())}catch(e){}},900);
+}
+
+/* Conecta la caja del usuario ya autenticado. */
+function conectarCaja(user){
+  _user=user;
+  _db=firebase.database();
+  _ref=_db.ref(CAJA_RUTA+'/'+user.uid);
+  return _ref.once('value').then(snap=>{
+    const remoto=snap.val();
+    if(remoto){
+      const local=cloudPayload();
+      // Si el dispositivo no tiene nada cargado, bajamos. Si tiene más que la
+      // nube, subimos. Nunca pisamos la nube con una caja vacía.
+      if(_diasEn(local)===0||_diasEn(remoto)>=_diasEn(local)){applyRemote(remoto);_syncReady=true}
+      else{_syncReady=true;_ref.set(local)}
+    }else{
+      _syncReady=true;
+      if(_diasEn(cloudPayload())>0)_ref.set(cloudPayload());
+    }
+    _ref.on('value',s=>{
+      const d=s.val();
+      if(!d||d.updatedBy===deviceId())return;
+      applyRemote(d);toast('Caja actualizada desde otro dispositivo');
+    },err=>{setSyncBadge('Sincronización con error: '+(err&&err.message||err))});
+    setSyncBadge('Nube conectada ✓ ('+(user.email||'tu cuenta')+')');
+  });
+}
+
+/* Arranque: si ya hay sesión de Mess, conecta sola. Si no, no molesta: la caja
+   funciona igual sin nube y el usuario entra cuando quiere desde el botón. */
 function startSync(){
-  if(!syncEnabled())return Promise.resolve();
-  setSyncBadge('Conectando a la nube…');
   return loadFirebase().then(()=>{
-    const cfg=syncCfg();
-    if(firebase.apps&&firebase.apps.length){
-      const cur=firebase.app().options||{};
-      if(cur.projectId!==cfg.projectId||cur.apiKey!==cfg.apiKey)return firebase.app().delete().then(()=>{firebase.initializeApp(cfg)});
-    }else{firebase.initializeApp(cfg)}
-  }).then(()=>firebase.auth().signInAnonymously()).then(()=>{
-    _db=firebase.firestore();
-    const ref=_db.collection('cajas').doc(syncCode());
-    return ref.get().then(snap=>{
-      if(snap.exists){
-        const remote=snap.data();
-        applyRemote(remote);_syncReady=true;
-        // Backfill: si el documento es de antes de que existiera backupJson
-        // (lo usa el respaldo diario automático del lado del servidor), lo
-        // empujamos una vez para completarlo, sin esperar a que cambies algo.
-        if(remote.backupJson==null)schedulePush();
-      }
-      else{_syncReady=true;ref.set(cloudPayload())}
-      if(_unsub)_unsub();
-      _unsub=ref.onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data();if(d.updatedBy===deviceId())return;applyRemote(d);toast('Caja actualizada desde otro dispositivo')},err=>{setSyncBadge('Sync con error: '+(err&&err.message||err))});
-      setSyncBadge('Nube conectada ✓ (código: '+syncCode()+')');
+    initFirebase();
+    return new Promise(res=>{
+      firebase.auth().onAuthStateChanged(u=>{
+        if(u){conectarCaja(u).catch(e=>setSyncBadge('Sincronización con error: '+((e&&e.message)||e)))}
+        else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess')}
+        res();
+      });
     });
   });
 }
+function syncEnabled(){return true}
+
+/* --- Cuenta: entrar, salir, ver estado --- */
+function abrirCuenta(){
+  loadFirebase().then(()=>{
+    initFirebase();
+    const u=firebase.auth().currentUser;
+    document.getElementById('modal').innerHTML=u?`
+      <div class="mtop"><div class="dd">${ic('cloud',24)}</div>
+        <div><h3>Tu cuenta Mess</h3><div class="msub">La caja se sincroniza con esta cuenta</div></div>
+        <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+      <div class="mbody2">
+        <div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13.5px">
+          Conectado como <b>${esc(u.email||'—')}</b>
+        </div>
+        <p style="font-size:13px;color:var(--ink3);line-height:1.6;margin:0 0 14px">
+          Tus movimientos viajan a tu propia caja en la nube y sólo los ve tu cuenta.
+          Es la misma cuenta del sistema de gestión.
+        </p>
+        <button class="btn-ghost" onclick="salirCuenta()">Cerrar sesión</button>
+      </div>`:`
+      <div class="mtop"><div class="dd">${ic('cloud',24)}</div>
+        <div><h3>Entrar con tu cuenta Mess</h3><div class="msub">La misma del sistema de gestión</div></div>
+        <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+      <div class="mbody2">
+        <div class="field"><label>Correo</label><input id="mess_mail" type="email" autocomplete="username" placeholder="tu@correo.com"></div>
+        <div class="field"><label>Contraseña</label><input id="mess_pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <div id="mess_err" style="color:var(--red);font-size:13px;margin:8px 0 0;min-height:18px"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn" onclick="entrarMailMess()">Entrar</button>
+          <button class="btn-ghost" onclick="entrarGoogleMess()">Entrar con Google</button>
+        </div>
+        <p style="font-size:12.5px;color:var(--ink3);line-height:1.6;margin:14px 0 0">
+          Sin entrar, la caja funciona igual en este dispositivo — lo que no hay es
+          sincronización con tus otros dispositivos.
+        </p>
+      </div>`;
+    document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+  }).catch(e=>toast('No se pudo cargar Firebase: '+((e&&e.message)||e)));
+}
+function _msgAuth(e){
+  const c=(e&&e.code)||'';
+  if(c.indexOf('wrong-password')>=0||c.indexOf('invalid-credential')>=0)return 'Correo o contraseña incorrectos.';
+  if(c.indexOf('user-not-found')>=0)return 'No existe una cuenta con ese correo.';
+  if(c.indexOf('too-many-requests')>=0)return 'Demasiados intentos. Esperá un rato.';
+  if(c.indexOf('network')>=0)return 'Sin conexión.';
+  return (e&&e.message)||'No se pudo entrar.';
+}
+function entrarMailMess(){
+  const em=(document.getElementById('mess_mail').value||'').trim();
+  const pw=document.getElementById('mess_pass').value||'';
+  const err=document.getElementById('mess_err');
+  if(!em||!pw){err.textContent='Completá correo y contraseña.';return}
+  err.textContent='Entrando…';
+  firebase.auth().signInWithEmailAndPassword(em,pw)
+    .then(cr=>{closeModal();toast('✓ Entraste como '+(cr.user.email||''));return conectarCaja(cr.user)})
+    .catch(e=>{err.textContent=_msgAuth(e)});
+}
+function entrarGoogleMess(){
+  const err=document.getElementById('mess_err');
+  const prov=new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(prov)
+    .then(cr=>{closeModal();toast('✓ Entraste como '+(cr.user.email||''));return conectarCaja(cr.user)})
+    .catch(e=>{if(err)err.textContent=_msgAuth(e)});
+}
+function salirCuenta(){
+  try{if(_ref)_ref.off()}catch(e){}
+  _ref=null;_syncReady=false;_user=null;
+  firebase.auth().signOut().then(()=>{closeModal();toast('Sesión cerrada');setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess')});
+}
+
+document.getElementById('syncBtn').onclick=abrirCuenta;
+
 /* Interceptar guardados locales para empujar a la nube (no invasivo) */
 (function(){const _si=localStorage.setItem.bind(localStorage);localStorage.setItem=function(k,v){_si(k,v);try{if(!_applyingRemote&&_syncReady&&/^caja_(contexts_v1|user_days_v2|loans_v1)/.test(k))schedulePush()}catch(e){}}})();
-function parseFirebaseCfg(text){
-  text=text||'';
-  // Preferir anclar en "firebaseConfig = { ... }" para no confundirse con las llaves
-  // del "import { initializeApp } from ..." si se pegó el snippet completo de Firebase.
-  let objText=null;
-  const anchored=text.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;/);
-  if(anchored)objText=anchored[1];
-  if(!objText){
-    const candidates=[...text.matchAll(/\{[\s\S]*?\}/g)].map(x=>x[0]);
-    objText=candidates.find(s=>/apiKey/.test(s))||null;
-  }
-  if(!objText)throw new Error('Pegá el objeto de configuración { ... } de Firebase (el que tiene apiKey, projectId, etc.)');
-  let obj;try{obj=Function('return ('+objText+')')()}catch(e){throw new Error('No pude leer la configuración pegada — probá pegar solo el bloque "firebaseConfig = { ... }"')}
-  if(!obj||!obj.apiKey||!obj.projectId)throw new Error('A la configuración le falta apiKey o projectId');
-  return obj;
-}
-const FS_RULES="rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /cajas/{codigo} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}";
-function openSyncSettings(){
-  const cfg=syncCfg();const code=syncCode();const on=syncEnabled();
-  document.getElementById('modal').innerHTML=`
-    <div class="mtop"><div class="dd">${ic('cloud',24)}</div>
-      <div><h3>Sincronizar entre dispositivos</h3><div class="msub">Esta caja sincroniza sola: cualquier navegador que abra este sitio ve los mismos datos, en vivo, sin configurar nada.</div></div>
-      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
-    <div class="mbody2">
-      <div style="padding:10px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;color:${on?'var(--green)':'var(--ink3)'}">
-        Estado: <b>${on?'Sincronización activada':'No configurada'}</b>${on?(' · código <b>'+esc(code)+'</b>'):''}
-      </div>
-      ${on?'<p style="font-size:13px;color:var(--ink3);margin:-6px 0 14px">Ojo: como el código de sincronización queda fijo en la app, cualquiera que entre a este sitio comparte esta misma caja. Si preferís separar tus datos, usá un código propio abajo.</p>':''}
-      <details style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px">
-        <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">Usar un código propio / conectar a otra caja (opcional)</summary>
-        <ol style="margin:12px 0 0 18px;font-size:13.5px;line-height:1.7;color:var(--ink2)">
-          <li>Entrá a <b>console.firebase.google.com</b> → <b>Agregar proyecto</b> (gratis, sin tarjeta).</li>
-          <li>Adentro: ⚙ <b>Configuración del proyecto</b> → “Tus apps” → ícono <b>Web &lt;/&gt;</b> → registrá una app → copiá el objeto <b>firebaseConfig</b>.</li>
-          <li>Menú <b>Compilación → Firestore Database → Crear base de datos</b> (modo producción, cualquier ubicación).</li>
-          <li>Solapa <b>Reglas</b> → pegá estas reglas → <b>Publicar</b>:
-            <div style="position:relative;margin-top:6px"><button class="btn-ghost" id="sy_copyrules" type="button" style="position:absolute;top:6px;right:6px;padding:4px 9px;font-size:12px">Copiar</button><pre id="sy_rules" style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12px;margin:0;white-space:pre">${esc(FS_RULES)}</pre></div>
-          </li>
-          <li>Menú <b>Compilación → Authentication → Comenzar</b> → método <b>Anónimo</b> → <b>Habilitar</b>.</li>
-          <li>Volvé acá: pegá el firebaseConfig y elegí un <b>código de caja</b> (secreto y largo, EL MISMO en todos tus dispositivos) → <b>Guardar y conectar</b>.</li>
-          <li>En tu otra compu/navegador/celu: abrí el sitio → ${ic('cloud',14)} Nube → pegá el <b>mismo</b> config y el <b>mismo</b> código → vas a ver la misma caja.</li>
-        </ol>
-      </details>
-      <div class="field"><label>firebaseConfig (pegá el objeto completo)</label><textarea id="sy_cfg" rows="6" placeholder="const firebaseConfig = { apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, ... };" style="width:100%;font-family:var(--mono,monospace);font-size:12.5px;background:var(--bg2);color:var(--ink);border:1px solid var(--line-strong,#2c4055);border-radius:10px;padding:11px">${cfg?esc(JSON.stringify(cfg,null,2)):''}</textarea></div>
-      <div class="field" style="margin-top:8px"><label>Código de caja (secreto, igual en todos tus dispositivos)</label><input id="sy_code" value="${esc(code)}" placeholder="ej: caja-emiliano-7h3k9x" autocomplete="off"></div>
-      <p style="font-size:12.5px;color:var(--ink3);margin-top:8px">El código funciona como contraseña de tu caja: usá uno largo y no lo compartas. Los datos entran en un documento (límite ~1MB; para un comercio chico alcanza por años).</p>
-      <div id="sy_err" class="errline" style="margin-top:10px"></div>
-    </div>
-    <div class="ed-foot">
-      ${on?'<button class="btn-del del" id="sy_off" type="button">Desconectar</button>':'<div class="del"></div>'}
-      <div style="margin-left:auto;display:flex;gap:10px">
-        <button class="btn-ghost" onclick="closeModal()">Cerrar</button>
-        <button class="btn-primary" id="sy_save" type="button">Guardar y conectar</button>
-      </div>
-    </div>`;
-  document.getElementById('sy_copyrules').onclick=()=>{navigator.clipboard.writeText(FS_RULES).then(()=>toast('Reglas copiadas')).catch(()=>toast('Seleccioná y copiá (Ctrl+C)'))};
-  const offBtn=document.getElementById('sy_off');
-  if(offBtn)offBtn.onclick=()=>{try{localStorage.setItem(SYNC_ENABLED_KEY,'0')}catch(e){}if(_unsub){_unsub();_unsub=null}_syncReady=false;setSyncBadge();closeModal();toast('Sincronización desconectada (los datos siguen en este dispositivo)')};
-  document.getElementById('sy_save').onclick=()=>{
-    const err=document.getElementById('sy_err');err.textContent='';
-    let parsed;try{parsed=parseFirebaseCfg(document.getElementById('sy_cfg').value)}catch(e){err.textContent=e.message;return}
-    const codev=(document.getElementById('sy_code').value||'').trim();
-    if(codev.length<6){err.textContent='Elegí un código de al menos 6 caracteres.';return}
-    try{localStorage.setItem(SYNC_CFG_KEY,JSON.stringify(parsed));localStorage.setItem(SYNC_CODE_KEY,codev);localStorage.setItem(SYNC_ENABLED_KEY,'1')}catch(e){}
-    _syncReady=false;if(_unsub){_unsub();_unsub=null}
-    toast('Conectando a la nube…');
-    startSync().then(()=>{toast('✓ Sincronización activada');closeModal()}).catch(e=>{err.textContent='No se pudo conectar: '+((e&&e.message)||e)+'. Revisá el config, las reglas y que Auth Anónimo esté habilitado.'});
-  };
-  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
-}
-document.getElementById('syncBtn').onclick=openSyncSettings;
 
 /* ============ notificación diaria de arqueo (app nativa) ============ */
 // Reusa el runtime de Capacitor que el wrapper nativo (ver MOBILE.md) inyecta
