@@ -516,6 +516,22 @@ tbody tr:hover{background:var(--panel2)}
 </style>
 </head>
 <body>
+<!-- ── Candado de 4 dígitos ──────────────────────────────────────────────
+     Es una CAPA ENCIMA de la app: no cambia nada del arranque, sólo tapa la
+     pantalla hasta que se ingresa el código. Así no puede romper la carga. -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:99999;background:#0A0D14;display:none;align-items:center;justify-content:center;padding:24px">
+  <div style="width:100%;max-width:320px;text-align:center">
+    <img src="logo.svg" alt="" style="width:72px;height:72px;margin:0 auto 18px;display:block">
+    <div id="pinTit" style="font-family:ui-serif,'Iowan Old Style',Palatino,Georgia,serif;font-size:20px;font-weight:600;color:#ECEAF6;margin-bottom:6px">Ingresá tu código</div>
+    <div id="pinSub" style="font-size:13px;color:#9AA0B8;margin-bottom:22px;line-height:1.5">4 dígitos para abrir la caja</div>
+    <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
+           style="width:100%;max-width:200px;text-align:center;font-size:30px;letter-spacing:16px;text-indent:16px;padding:12px 0;border-radius:12px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none">
+    <div id="pinErr" style="color:#ff6b6b;font-size:13px;min-height:20px;margin-top:10px"></div>
+    <button id="pinBtn" style="width:100%;max-width:200px;margin-top:8px;padding:12px;border:none;border-radius:12px;background:linear-gradient(90deg,#7C5CFF,#6C7BFF);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Entrar</button>
+    <div style="margin-top:18px"><a href="../mi-app/" style="color:#6f6c8a;font-size:12.5px;text-decoration:none">← Volver a Mess</a></div>
+  </div>
+</div>
+
 <div class="app">
   <div class="side-scrim" id="sideScrim"></div>
   <aside class="side" id="side">
@@ -3289,6 +3305,67 @@ setTimeout(maybeAutoBackup,1500);
 // Ya no hay configuración que preparar: la caja usa el Firebase de Mess y la
 // sesión del usuario. Si hay sesión, conecta sola; si no, espera al botón.
 setTimeout(()=>{startSync().catch(e=>setSyncBadge('Sin conexión con la nube'))},300);
+
+/* ============ Candado de 4 dígitos ============
+   Guarda un hash del código, no el código. Es un candado de conveniencia: evita
+   que alguien que agarra el dispositivo desbloqueado abra la caja. No protege
+   contra alguien con conocimientos que revise el navegador — los movimientos
+   están en localStorage. Para eso está la cuenta, que es lo que protege la nube. */
+const PIN_KEY='caja_pin_hash_v1';
+function _pinHash(txt){
+  // SHA-256 si el navegador lo permite (https). Si no, un hash simple: no es
+  // criptografía seria, pero tampoco lo es un PIN de 4 dígitos.
+  if(window.crypto&&crypto.subtle&&window.isSecureContext){
+    return crypto.subtle.digest('SHA-256',new TextEncoder().encode('caja:'+txt))
+      .then(b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''));
+  }
+  let h=0;for(let i=0;i<txt.length;i++){h=((h<<5)-h+txt.charCodeAt(i))|0}
+  return Promise.resolve('s'+h);
+}
+function pinGuardado(){try{return localStorage.getItem(PIN_KEY)||''}catch(e){return ''}}
+function abrirCandado(){
+  const g=document.getElementById('pinGate');if(!g)return;
+  const hay=!!pinGuardado();
+  document.getElementById('pinTit').textContent = hay?'Ingresá tu código':'Creá tu código';
+  document.getElementById('pinSub').textContent = hay?'4 dígitos para abrir la caja':'Elegí 4 dígitos. Te los va a pedir cada vez que abras la caja.';
+  document.getElementById('pinBtn').textContent = hay?'Entrar':'Guardar y entrar';
+  g.style.display='flex';
+  setTimeout(()=>{const i=document.getElementById('pinInput');if(i)i.focus()},150);
+}
+function _pinIntento(){
+  const inp=document.getElementById('pinInput');
+  const err=document.getElementById('pinErr');
+  const v=(inp.value||'').trim();
+  if(!/^[0-9]{4}$/.test(v)){err.textContent='Tienen que ser 4 números.';return}
+  _pinHash(v).then(h=>{
+    const guardado=pinGuardado();
+    if(!guardado){
+      try{localStorage.setItem(PIN_KEY,h)}catch(e){}
+      document.getElementById('pinGate').style.display='none';
+      toast('Código guardado');
+      return;
+    }
+    if(h===guardado){document.getElementById('pinGate').style.display='none';inp.value=''}
+    else{err.textContent='Código incorrecto.';inp.value='';inp.focus()}
+  });
+}
+/* Cambiar el código: se pide el actual y después el nuevo. */
+function cambiarPin(){
+  const actual=prompt('Código actual (4 dígitos):');
+  if(actual==null)return;
+  _pinHash((actual||'').trim()).then(h=>{
+    if(pinGuardado()&&h!==pinGuardado()){toast('Código incorrecto');return}
+    const nuevo=prompt('Código nuevo (4 dígitos):');
+    if(nuevo==null)return;
+    if(!/^[0-9]{4}$/.test((nuevo||'').trim())){toast('Tienen que ser 4 números');return}
+    _pinHash(nuevo.trim()).then(h2=>{try{localStorage.setItem(PIN_KEY,h2)}catch(e){}toast('Código actualizado')});
+  });
+}
+(function(){
+  const b=document.getElementById('pinBtn'); if(b)b.onclick=_pinIntento;
+  const i=document.getElementById('pinInput'); if(i)i.addEventListener('keydown',e=>{if(e.key==='Enter')_pinIntento()});
+  abrirCandado();
+})();
 
 </script>
 </body>
