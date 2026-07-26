@@ -2692,19 +2692,68 @@ document.getElementById('newDayBtn').onclick=()=>openEditor(null);
 function toast(msg){let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:linear-gradient(135deg,var(--gold),#a8771f);color:#1a1206;font-weight:700;padding:13px 22px;border-radius:12px;z-index:300;box-shadow:var(--shadow);opacity:0;transition:.3s;font-size:14px;max-width:88vw;text-align:center';document.body.appendChild(t)}t.textContent='✓ '+msg;requestAnimationFrame(()=>{t.style.opacity=1;t.style.transform='translateX(-50%) translateY(0)'});clearTimeout(t._t);t._t=setTimeout(()=>{t.style.opacity=0;t.style.transform='translateX(-50%) translateY(20px)'},3000)}
 
 /* ============ backup ============ */
-document.getElementById('backupBtn').onclick=()=>{
-  // Antes exportaba solo userDays (la caja activa) — un backup manual que en
-  // realidad no respaldaba nada del resto de las empresas/proyectos, aunque
-  // el propio importador de acá abajo ya soporta el formato completo
-  // (fullBackupPayload(), el mismo que usa el backup por email y la nube).
-  // Pedido explícito del usuario: "que haga un backup de todas las
-  // empresas" — ahora exporta fullBackupPayload() siempre.
-  const totalDays=contexts.reduce((s,c)=>s+loadUserDaysFor(c.id,'ARS').length+loadUserDaysFor(c.id,'USD').length,0);
-  if(confirm(`Respaldo completo — todas las empresas/proyectos y monedas\n\n${contexts.length} empresa(s)/proyecto(s) · ${totalDays} día(s) cargado(s) en total.\n\nAceptar = Exportar respaldo (.json)\nCancelar = Importar un respaldo`)){
-    if(!totalDays){alert('Todavía no agregaste ningún día manualmente en ninguna empresa/proyecto.');return}
-    dl('respaldo_completo_'+todayIso()+'.json',JSON.stringify(fullBackupPayload(),null,1),'application/json');
-  }else{document.getElementById('importFile').click()}
-};
+// Antes el botón exportaba solo userDays (la caja activa) — un backup manual
+// que en los hechos no respaldaba nada del resto de las empresas/proyectos,
+// aunque el importador de acá abajo ya soporta el formato completo
+// (fullBackupPayload(), el mismo que usa el backup por email y la nube).
+// Primer fix: exportar fullBackupPayload() siempre (todas las empresas). El
+// usuario pidió un paso más — "que deje elegido si todas o cuáles" — así que
+// ahora hay un modal picker: tildás qué empresas/proyectos entran en el
+// archivo (todas por default) en vez de que sea todo o nada.
+function openBackupPicker(){
+  const rows=contexts.map(c=>({c,days:loadUserDaysFor(c.id,'ARS').length+loadUserDaysFor(c.id,'USD').length}));
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">${ic('save',24)}</div>
+      <div><h3>Elegir qué respaldar</h3><div class="msub">Tildá las empresas/proyectos que querés incluir en el archivo .json.</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="bk_all" checked style="width:18px;height:18px"> Todas las empresas/proyectos
+      </label>
+      <div id="bk_list" style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px">
+        ${rows.map(r=>`<label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" class="bk_ctx" value="${esc(r.c.id)}" checked style="width:16px;height:16px">
+          <span>${esc(r.c.empresa)} · ${esc(r.c.proyecto)} <span style="color:var(--ink3);font-size:12px">(${r.days} día(s))</span></span>
+        </label>`).join('')}
+      </div>
+      <div id="bk_err" class="errline" style="margin-top:10px"></div>
+    </div>
+    <div class="ed-foot">
+      <button class="btn-ghost" type="button" id="bk_importBtn">Importar un respaldo</button>
+      <div style="margin-left:auto;display:flex;gap:10px">
+        <button class="btn-ghost" type="button" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" type="button" id="bk_exportBtn">⤓ Exportar</button>
+      </div>
+    </div>`;
+  const allChk=document.getElementById('bk_all');
+  const itemChks=()=>[...document.querySelectorAll('.bk_ctx')];
+  allChk.onchange=()=>{itemChks().forEach(c=>c.checked=allChk.checked)};
+  itemChks().forEach(c=>c.onchange=()=>{allChk.checked=itemChks().every(x=>x.checked)});
+  document.getElementById('bk_importBtn').onclick=()=>{closeModal();document.getElementById('importFile').click()};
+  document.getElementById('bk_exportBtn').onclick=()=>{
+    const err=document.getElementById('bk_err');err.textContent='';
+    const selected=itemChks().filter(c=>c.checked).map(c=>c.value);
+    if(!selected.length){err.textContent='Tildá al menos una empresa/proyecto.';return}
+    const selCtx=contexts.filter(c=>selected.includes(c.id));
+    const totalDays=selCtx.reduce((s,c)=>s+loadUserDaysFor(c.id,'ARS').length+loadUserDaysFor(c.id,'USD').length,0);
+    if(!totalDays){err.textContent='No hay ningún día cargado en lo que tildaste.';return}
+    const data={};
+    selCtx.forEach(c=>{data[c.id]={ARS:loadUserDaysFor(c.id,'ARS'),USD:loadUserDaysFor(c.id,'USD')}});
+    // Un préstamo entra si al menos una de las dos puntas está tildada — el
+    // objeto de préstamo ya guarda su propia empresa/proyecto embebida
+    // (from/to), así que sigue siendo legible aunque la contraparte haya
+    // quedado afuera del respaldo.
+    const selLoans=loans.filter(l=>selected.includes(l.from.id)||selected.includes(l.to.id));
+    const payload={exportedAt:todayIso(),contexts:selCtx,data,loans:selLoans};
+    const todas=selected.length===contexts.length;
+    const fname=(todas?'respaldo_completo_':'respaldo_'+selCtx.map(c=>slug(c.empresa)).join('-')+'_')+todayIso()+'.json';
+    dl(fname,JSON.stringify(payload,null,1),'application/json');
+    closeModal();
+    toast('Respaldo exportado');
+  };
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+document.getElementById('backupBtn').onclick=openBackupPicker;
 document.getElementById('importFile').onchange=e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{
