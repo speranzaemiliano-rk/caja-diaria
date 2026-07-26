@@ -2693,10 +2693,16 @@ function toast(msg){let t=document.getElementById('toast');if(!t){t=document.cre
 
 /* ============ backup ============ */
 document.getElementById('backupBtn').onclick=()=>{
-  const n=userDays.length,ctx=activeContext();
-  if(confirm(`Respaldo de días agregados — ${ctx.empresa} · ${ctx.proyecto} · Caja ${CUR}\n\nTenés ${n} día(s) cargado(s) manualmente en esta caja.\n\nAceptar = Exportar respaldo (.json)\nCancelar = Importar un respaldo`)){
-    if(!n){alert('Todavía no agregaste días manualmente en esta caja.');return}
-    dl('respaldo_'+slug(ctx.empresa)+'-'+slug(ctx.proyecto)+'_'+CUR+'_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(userDays,null,1),'application/json');
+  // Antes exportaba solo userDays (la caja activa) — un backup manual que en
+  // realidad no respaldaba nada del resto de las empresas/proyectos, aunque
+  // el propio importador de acá abajo ya soporta el formato completo
+  // (fullBackupPayload(), el mismo que usa el backup por email y la nube).
+  // Pedido explícito del usuario: "que haga un backup de todas las
+  // empresas" — ahora exporta fullBackupPayload() siempre.
+  const totalDays=contexts.reduce((s,c)=>s+loadUserDaysFor(c.id,'ARS').length+loadUserDaysFor(c.id,'USD').length,0);
+  if(confirm(`Respaldo completo — todas las empresas/proyectos y monedas\n\n${contexts.length} empresa(s)/proyecto(s) · ${totalDays} día(s) cargado(s) en total.\n\nAceptar = Exportar respaldo (.json)\nCancelar = Importar un respaldo`)){
+    if(!totalDays){alert('Todavía no agregaste ningún día manualmente en ninguna empresa/proyecto.');return}
+    dl('respaldo_completo_'+todayIso()+'.json',JSON.stringify(fullBackupPayload(),null,1),'application/json');
   }else{document.getElementById('importFile').click()}
 };
 document.getElementById('importFile').onchange=e=>{
