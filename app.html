@@ -3286,8 +3286,9 @@ renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
 setTimeout(maybeAutoBackup,1500);
-ensureDefaultSync();
-if(syncEnabled())setTimeout(()=>{startSync().catch(e=>toast('Sync: '+((e&&e.message)||e)))},300);
+// Ya no hay configuración que preparar: la caja usa el Firebase de Mess y la
+// sesión del usuario. Si hay sesión, conecta sola; si no, espera al botón.
+setTimeout(()=>{startSync().catch(e=>setSyncBadge('Sin conexión con la nube'))},300);
 
 </script>
 </body>
