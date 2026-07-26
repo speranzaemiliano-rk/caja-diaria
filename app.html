@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Control de Caja Diario · Movimientos</title>
+<title>Mess · Caja Diaria</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ffffff">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Caja Diaria">
+<meta name="apple-mobile-web-app-title" content="Mess Caja">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -521,7 +521,7 @@ tbody tr:hover{background:var(--panel2)}
   <aside class="side" id="side">
     <a class="brand" href="./" title="Volver a la portada" style="text-decoration:none;color:inherit">
       <div class="mark" aria-hidden="true" title="Fajos de billetes de US$100"></div>
-      <div><h1>Caja Diaria</h1><span>Control · Tesorería</span></div>
+      <div><h1>Mess</h1><span>Caja Diaria · Tesorería</span></div>
     </a>
     <div class="nav-label">Empresa / Proyecto</div>
     <div class="ctxsel-wrap">
@@ -1950,7 +1950,7 @@ async function biometricAvailable(){
 async function tryBiometricUnlock(){
   try{
     const NB=window.Capacitor.Plugins.NativeBiometric;
-    await NB.verifyIdentity({reason:'Ver créditos a cobrar',title:'Caja Diaria',subtitle:'Confirmá tu identidad para ver el detalle de créditos'});
+    await NB.verifyIdentity({reason:'Ver créditos a cobrar',title:'Mess Caja',subtitle:'Confirmá tu identidad para ver el detalle de créditos'});
     return true; // verifyIdentity rechaza la promesa si falla, cancela o no hay huella reconocida
   }catch(e){return false}
 }
@@ -2742,7 +2742,7 @@ function sendBackupViaEmailJS(email,payloadStr,fname,today){
     ejs.init({publicKey:c.pub});
     return ejs.send(c.svc,c.tpl,{
       to_email:email,
-      subject:'Respaldo diario · Caja Diaria · '+today,
+      subject:'Respaldo diario · Mess Caja · '+today,
       message:'Respaldo automático del '+today+'. Adjunto: '+fname+' — se puede volver a cargar en la app con Respaldo → Importar.',
       backup_name:fname,
       backup_file:b64utf8(payloadStr)
@@ -2755,13 +2755,13 @@ function backupUrl(){return (localStorage.getItem(BACKUP_URL_KEY)||'').trim()}
 function backupMethod(){return localStorage.getItem(BACKUP_METHOD_KEY)||(backupUrl()?'google':(emailjsReady()?'emailjs':'draft'))}
 function sendViaAppsScript(url,email,payloadStr,fname,today){
   return fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({to:email,subject:'Respaldo diario · Caja Diaria · '+today,filename:fname,content:payloadStr,
+    body:JSON.stringify({to:email,subject:'Respaldo diario · Mess Caja · '+today,filename:fname,content:payloadStr,
       message:'Respaldo automático del '+today+'. Adjunto '+fname+' — se vuelve a cargar en la app con Respaldo → Importar.'})});
 }
 function draftFallback(email,payloadStr,fname,today,reason){
   dl(fname,payloadStr,'application/json');
   setTimeout(()=>{
-    const subject=encodeURIComponent('Respaldo diario · Caja Diaria · '+today);
+    const subject=encodeURIComponent('Respaldo diario · Mess Caja · '+today);
     const body=encodeURIComponent((reason?('('+reason+') '):'')+'Se descargó el archivo "'+fname+'" en este dispositivo — adjuntalo a este correo antes de enviarlo.\n\nEmpresas / proyectos:\n'+contexts.map(c=>'• '+ctxLabel(c)).join('\n'));
     window.location.href='mailto:'+encodeURIComponent(email)+'?subject='+subject+'&body='+body;
   },500);
@@ -2845,7 +2845,7 @@ function appsScriptCode(email){
     '  if (!json) throw new Error("No se encontró backupJson en el documento de la nube.");',
     '',
     '  var today = new Date().toISOString().slice(0,10);',
-    '  GmailApp.sendEmail(BACKUP_EMAIL, "Respaldo diario · Caja Diaria · " + today,',
+    '  GmailApp.sendEmail(BACKUP_EMAIL, "Respaldo diario · Mess Caja · " + today,',
     '    "Respaldo automático (servidor) del " + today + ". Adjunto: respaldo_completo_" + today + ".json — se puede volver a cargar en la app con Respaldo → Importar.",',
     '    {attachments:[Utilities.newBlob(json, "application/json", "respaldo_completo_"+today+".json")]}',
     '  );',
@@ -2968,18 +2968,18 @@ installBtn.onclick=async()=>{
   // iPhone/iPad: Safari no tiene instalador programático — mostramos la guía.
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">${ic('phone',24)}</div>
-      <div><h3>Instalá Caja Diaria en tu iPhone</h3><div class="msub">Queda como una app, gratis, sin pasar por la App Store.</div></div>
+      <div><h3>Instalá Mess Caja en tu iPhone</h3><div class="msub">Queda como una app, gratis, sin pasar por la App Store.</div></div>
       <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
     <div class="mbody2">
       <ol style="margin:4px 0 0 18px;font-size:15px;line-height:1.9;color:var(--ink)">
         <li>Tocá el botón <b>Compartir</b> (el cuadradito con la flecha ↑, abajo en Safari).</li>
         <li>Deslizá y elegí <b>“Agregar a inicio”</b>.</li>
-        <li>Tocá <b>Agregar</b> arriba a la derecha. Listo: te queda el ícono de Caja Diaria en la pantalla.</li>
+        <li>Tocá <b>Agregar</b> arriba a la derecha. Listo: te queda el ícono de Mess Caja en la pantalla.</li>
       </ol>
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 };
-window.addEventListener('appinstalled',()=>{installBtn.style.display='none';deferredInstall=null;toast('Caja Diaria instalada')});
+window.addEventListener('appinstalled',()=>{installBtn.style.display='none';deferredInstall=null;toast('Mess Caja instalada')});
 if(_isIOS&&!_standalone){installBtn.style.display='inline-flex';installBtn.textContent='⇩ Instalar en iPhone'}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{})});
@@ -3253,7 +3253,7 @@ async function scheduleArqueoNotif(){
     const hour=notifHour(),now=new Date();
     let at=new Date(now.getFullYear(),now.getMonth(),now.getDate(),hour,0,0,0);
     if(at<=now)at.setDate(at.getDate()+1);
-    await LN.schedule({notifications:[{id:ARQUEO_NOTIF_ID,title:'Caja Diaria',body:'Todavía no cargaste el cierre de hoy en '+ctxLabel(activeContext())+' · '+CUR+'.',schedule:{at}}]});
+    await LN.schedule({notifications:[{id:ARQUEO_NOTIF_ID,title:'Mess Caja',body:'Todavía no cargaste el cierre de hoy en '+ctxLabel(activeContext())+' · '+CUR+'.',schedule:{at}}]});
   }catch(e){/* plugin no disponible o falló el bridge nativo: no rompemos el resto de la app */}
 }
 function openNotifSettings(){
