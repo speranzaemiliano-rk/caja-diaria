@@ -114,9 +114,24 @@
   .foot .row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;font-size:13.5px}
   .foot .lks{display:flex;gap:20px}
   .foot .lks a:hover{color:var(--ink)}
+
+  /* splash de entrada: 4s con el logo + "Mess", después se desvanece y queda
+     la portada de siempre debajo (no navega a ningún lado, ya está cargada). */
+  #splash{position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .6s ease,visibility .6s ease}
+  #splash img{width:clamp(84px,14vw,120px);height:clamp(84px,14vw,120px)}
+  #splash .sp-name{font-family:var(--serif);font-weight:600;font-size:clamp(1.6rem,4vw,2.2rem);letter-spacing:-.3px;
+    background:linear-gradient(90deg,#22D3EE,#7C5CFF 55%,#C084FC);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #splash .sp-tag{font-size:.8rem;font-weight:600;letter-spacing:2.4px;text-transform:uppercase;color:var(--ink3)}
+  #splash.hide{opacity:0;visibility:hidden;pointer-events:none}
+  body.splash-active{overflow:hidden}
 </style>
 </head>
-<body data-palette="#4B3A8C,#6247B8,#7C5CFF,#9E86FF,#D9CFFF">
+<body data-palette="#4B3A8C,#6247B8,#7C5CFF,#9E86FF,#D9CFFF" class="splash-active">
+  <div id="splash" aria-hidden="true">
+    <img src="logo.svg" alt="">
+    <div class="sp-name">Mess</div>
+    <div class="sp-tag">Sistema de Gestión</div>
+  </div>
   <header class="top">
     <div class="wrap row">
       <a class="brand" href="./">
@@ -228,6 +243,16 @@
 
 <script>
   try{document.getElementById('yr').textContent=new Date().getFullYear()}catch(e){}
+
+  /* ---- Splash de entrada: 4s con el logo + "Mess", después revela la portada ---- */
+  (function(){
+    const splash=document.getElementById('splash');if(!splash)return;
+    setTimeout(()=>{
+      splash.classList.add('hide');
+      document.body.classList.remove('splash-active');
+      setTimeout(()=>splash.remove(),650);
+    },4000);
+  })();
 
   /* ---- Infografía: medio-anillo (composición de ingresos) con líneas a las etiquetas ---- */
   (function(){
