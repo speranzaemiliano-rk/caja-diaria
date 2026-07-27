@@ -201,6 +201,19 @@ tbody tr:last-child td{border-bottom:none}
 .flag.warn{background:var(--red-bg);color:var(--red)}
 .flag.idle{background:rgba(100,122,145,.12);color:var(--ink3)}
 
+/* "¿en qué día estoy?": fecha de hoy + estado del cierre de la caja activa */
+.todaybar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--ink2);border-radius:var(--r);padding:11px 16px;margin-bottom:16px;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
+.todaybar:hover{border-color:var(--line2)}
+.todaybar .td-lab{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3)}
+.todaybar .td-hoy{font-family:'Roboto';font-size:15px;font-weight:700;color:var(--ink);margin-top:1px}
+.todaybar .td-est{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-left:auto;font-size:12.5px;color:var(--ink2)}
+.todaybar .td-pill{font-size:11px;font-weight:600;border-radius:999px;padding:3px 11px;border:1px solid var(--line);color:var(--ink2);white-space:nowrap}
+.todaybar.ok{border-left-color:var(--green)}
+.todaybar.ok .td-pill{background:var(--green-bg);color:var(--green);border-color:var(--green)}
+.todaybar.late{border-left-color:var(--red)}
+.todaybar.late .td-pill{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+@media(max-width:640px){.todaybar .td-est{margin-left:0;width:100%}}
+
 /* alarma de diferencia de caja: persistente arriba de todo, en cualquier vista */
 .warnbanner{background:linear-gradient(160deg,var(--red-bg),var(--panel));border:1px solid var(--red);border-radius:var(--r);padding:16px 20px;margin-bottom:22px;display:flex;gap:14px;align-items:flex-start;box-shadow:var(--shadow)}
 .warnbanner .wi{font-size:22px;line-height:1;flex-shrink:0;animation:warnpulse 1.8s ease-in-out infinite}
@@ -627,6 +640,7 @@ tbody tr:hover{background:var(--panel2)}
           <span>Préstamos</span>
         </button>
       </nav>
+      <div id="todayBar"></div>
       <div id="warnBanner"></div>
       <!-- DASHBOARD -->
       <section class="view on" id="v-dash">
@@ -1147,8 +1161,39 @@ function renderAll(){
   renderKpis();renderDayMovs();renderDonut();renderDiffList();renderMonthBars();drawLine(currentRange);
   fillYearSelects();renderIndex();
   renderAnalytics();drawWeekday();renderMovs();
+  renderTodayBar();
   renderWarnBanner();
   scheduleArqueoNotif();
+}
+// "¿En qué día estoy?" — barra arriba del tablero con la fecha de HOY (día de la
+// semana incluido) y el estado del cierre en la caja activa: si el día de hoy ya
+// está cargado, o cuántos días hace que no se carga. Click: abre el día de hoy si
+// existe, o el editor para cargarlo.
+function renderTodayBar(){
+  const el=document.getElementById('todayBar');if(!el)return;
+  const iso=todayIso(),[y,mo,dd]=iso.split('-').map(Number);
+  const fechaLarga=wdOf(iso)+' '+dd+' de '+MESES[mo-1].toLowerCase()+' de '+y;
+  const hoy=(days||[]).find(x=>x.iso===iso&&!x.empty);
+  let cls='',pill='',detalle='',accion='';
+  if(hoy){
+    cls='ok';pill='Día cargado';
+    detalle='Saldo final '+peso(hoy.sf)+' · '+(hoy.nmov!=null?hoy.nmov:(hoy.movs||[]).length)+' movimiento(s)';
+    accion=`onclick="openDayIso('${iso}')" title="Ver el día de hoy"`;
+  }else if(last){
+    const atras=Math.round((new Date(iso+'T00:00')-new Date(last.iso+'T00:00'))/86400000);
+    cls=atras>3?'late':'';
+    pill=atras>0?'Sin cargar · '+atras+' día(s)':'Sin cargar';
+    detalle='Último día cargado: '+last.date+' · '+last.wd;
+    accion='onclick="openEditor(null)" title="Cargar el día"';
+  }else{
+    pill='Sin cargar';
+    detalle='Todavía no cargaste ningún día en esta caja';
+    accion='onclick="openEditor(null)" title="Cargar el primer día"';
+  }
+  el.innerHTML=`<div class="todaybar ${cls}" ${accion}>
+    <div><div class="td-lab">Hoy</div><div class="td-hoy">${esc(fechaLarga)}</div></div>
+    <div class="td-est"><span>${esc(detalle)}</span><span class="td-pill">${esc(pill)}</span></div>
+  </div>`;
 }
 // Alarma de diferencia de caja grande: visible siempre, arriba de todo (no
 // solo en Análisis), para cualquier empresa/proyecto/moneda con un descuadre
