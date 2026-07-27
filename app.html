@@ -513,6 +513,23 @@ tbody tr:hover{background:var(--panel2)}
   .dkpis{grid-template-columns:repeat(4,1fr)!important}
   a[href]::after{content:''}
 }
+
+/* Salto al sistema: va fuera del menú "⋯" para que esté siempre a la vista.
+   En pantallas angostas queda sólo la flecha, para no comerse la barra. */
+.btn-switch-sis{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:7px 12px;border-radius:9px;cursor:pointer;font-family:inherit;
+  font-size:13px;font-weight:600;white-space:nowrap;
+  background:rgba(124,92,255,.12);color:#C9C2F5;border:1px solid rgba(124,92,255,.4);
+  transition:background .18s,border-color .18s;
+}
+.btn-switch-sis:hover{background:rgba(124,92,255,.24);border-color:rgba(124,92,255,.75)}
+.btn-switch-sis .sis-ico{display:none;font-size:16px}
+@media (max-width:640px){
+  .btn-switch-sis .sis-txt{display:none}
+  .btn-switch-sis .sis-ico{display:inline}
+  .btn-switch-sis{padding:7px 10px}
+}
 </style>
 </head>
 <body>
@@ -523,7 +540,7 @@ tbody tr:hover{background:var(--panel2)}
   <div style="width:100%;max-width:320px;text-align:center">
     <img src="logo.svg" alt="" style="width:72px;height:72px;margin:0 auto 18px;display:block">
     <div id="pinTit" style="font-family:ui-serif,'Iowan Old Style',Palatino,Georgia,serif;font-size:20px;font-weight:600;color:#ECEAF6;margin-bottom:6px">Ingresá tu código</div>
-    <div id="pinSub" style="font-size:13px;color:#9AA0B8;margin-bottom:22px;line-height:1.5">4 dígitos para abrir la caja</div>
+    <div id="pinSub" style="font-size:13px;color:#9AA0B8;margin-bottom:22px;line-height:1.5;max-width:100%;overflow-wrap:break-word">4 dígitos para abrir la caja</div>
     <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
            style="width:100%;max-width:200px;text-align:center;font-size:30px;letter-spacing:16px;text-indent:16px;padding:12px 0;border-radius:12px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none">
     <div id="pinErr" style="color:#ff6b6b;font-size:13px;min-height:20px;margin-top:10px"></div>
@@ -574,12 +591,12 @@ tbody tr:hover{background:var(--panel2)}
       </div>
       <div class="ticker" id="ticker"></div>
       <div class="actions">
+        <button class="btn-switch-sis" id="irSistemaBtn" title="Ir al sistema de gestión" onclick="location.href='../mi-app/'"><span class="sis-txt">⇄ Sistema</span><span class="sis-ico">⇄</span></button>
         <button class="btn-ghost actions-more-btn" id="actionsMoreBtn" title="Más opciones" aria-label="Más opciones">⋯</button>
         <div class="actions-secondary" id="actionsSecondary">
           <button class="btn-ghost" id="installBtn" style="display:none" title="Instalar la app en este dispositivo">⇩ Instalar app</button>
           <button class="btn-ghost" id="emailBackupBtn" title="Configurar respaldo diario automático por email"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg> Backup diario</button>
           <button class="btn-ghost" id="excelBtn" title="Descargar Excel (.xlsx) con todas las cajas">⬇ Excel</button>
-          <button class="btn-ghost" id="irSistemaBtn" title="Ir al sistema de gestión" onclick="location.href='../mi-app/'">⇄ Sistema</button>
           <button class="btn-ghost" id="syncBtn" title="Sincronizar la caja entre dispositivos (nube)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.6 1.8A4 4 0 0 0 6.5 19h11z"/></svg> Nube</button>
           <button class="btn-ghost" id="backupBtn" title="Exportar / importar respaldo (.json que la app puede volver a cargar)">⤓ Respaldo</button>
           <button class="btn-ghost" id="notifBtn" title="Recordatorio diario para cargar el cierre del día (solo en la app instalada)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex-shrink:0"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg> Notificación diaria</button>
@@ -3383,7 +3400,7 @@ function abrirCandado(){
   const g=document.getElementById('pinGate');if(!g)return;
   const hay=!!pinGuardado();
   document.getElementById('pinTit').textContent = hay?'Ingresá tu código':'Creá tu código';
-  document.getElementById('pinSub').textContent = hay?'4 dígitos para abrir la caja':'Elegí 4 dígitos. Te los va a pedir cada vez que abras la caja.';
+  document.getElementById('pinSub').textContent = hay?'4 dígitos para abrir la caja':'Elegí 4 dígitos. Te los pide al abrir la caja.';
   document.getElementById('pinBtn').textContent = hay?'Entrar':'Guardar y entrar';
   g.style.display='flex';
   setTimeout(()=>{const i=document.getElementById('pinInput');if(i)i.focus()},150);
