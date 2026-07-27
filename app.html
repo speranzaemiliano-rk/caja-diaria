@@ -1232,7 +1232,10 @@ function renderDayMovs(){
   if(!d.movs.length){el.innerHTML='<div class="empty-state">Este día no tuvo movimientos. El saldo final arrastra el inicial.</div>';updateDaySelBar();return}
   const sel=dayMovsSelecting;
   const neto=(d.ing||0)+(d.egr||0);
-  const rows=d.movs.map((m,i)=>`<tr style="cursor:default">${sel?`<td class="selchk"><input type="checkbox" ${daySelSet.has(i)?'checked':''} onchange="toggleDaySelItem(${i},this.checked)"></td>`:''}<td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join('');
+  // Más nuevo arriba. Se conserva el índice ORIGINAL (par {m,i}) porque los
+  // checkboxes de selección borran por índice: con la lista dada vuelta y sin
+  // esto, tildar un movimiento borraría otro.
+  const rows=d.movs.map((m,i)=>({m,i})).reverse().map(({m,i})=>`<tr style="cursor:default">${sel?`<td class="selchk"><input type="checkbox" ${daySelSet.has(i)?'checked':''} onchange="toggleDaySelItem(${i},this.checked)"></td>`:''}<td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join('');
   el.innerHTML=`<div class="mvs" style="margin:0"><table>
     <thead><tr>${sel?'<th class="selchk"></th>':''}<th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -1407,7 +1410,7 @@ function toggleM(h){h.classList.toggle('open');const open=h.classList.contains('
 function openDayIso(iso){const d=days.find(x=>x.iso===iso);if(d)openDay(d)}
 function openDay(d){
   const neto=(d.ing||0)+(d.egr||0);
-  const movRows=d.movs.length?d.movs.map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
+  const movRows=d.movs.length?d.movs.slice().reverse().map(m=>`<tr style="cursor:default"><td class="${m.imp<0?'neg':'pos'}" style="font-weight:600">${pesoS(m.imp)}</td><td class="l">${esc(m.cpt)||'<span style="color:var(--ink3)">(sin concepto)</span>'}</td><td class="l" style="color:var(--ink3)">${esc(refLabel(m.ref))||'—'}</td></tr>`).join(''):'<tr style="cursor:default"><td colspan="3" class="l" style="color:var(--ink3);text-align:center;padding:26px">No se registraron movimientos este día.</td></tr>';
   const caja=d.caja&&d.caja.length?`<div class="ctrlbox" style="margin-top:14px"><h4>Desglose caja real (conteo físico)</h4><div class="cajachips">${d.caja.map(c=>`<span${c<0?' style="color:var(--red)"':''}>${pesoS(c)}</span>`).join('')}<span style="background:var(--gold);color:#1a1206;border:none">Σ ${pesoS(d.caja.reduce((s,x)=>s+x,0))}</span></div></div>`:'';
   const editBtn=d.src==='user'?`<button class="btn-ghost" onclick="editDay('${d.iso}')">✎ Editar día</button>`:'';
   const ctxInfo=esc(ctxLabel(activeContext()))+' · '+(CUR==='ARS'?'$ Pesos':'US$ Dólares');
