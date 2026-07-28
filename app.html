@@ -3451,6 +3451,18 @@ function _pintarEstadoNube(){
       <span class="cb-t">Conectando con la nube…</span></div>`;
     return;
   }
+  // El error va ANTES que "no hay sesión": si Firebase ni siquiera cargó, tampoco
+  // hay usuario, y decirle "entrá con tu cuenta" manda a la persona a intentar algo
+  // que no puede funcionar. El problema es la red, no la sesión.
+  if(_nubeError){
+    el.innerHTML=`<div class="cloudbar off" onclick="location.reload()" title="${esc(_nubeError)}">
+      <span class="cb-ic">${ic('cloud',18)}</span>
+      <span class="cb-t"><b>No se pudo sincronizar.</b> Estás viendo sólo lo de este navegador.
+        Lo que cargues igual queda guardado acá y sube solo cuando vuelva la conexión.
+        <span style="opacity:.8">${esc(_nubeError)}</span></span>
+      <span class="cb-a">Reintentar</span></div>`;
+    return;
+  }
   if(!_user){
     el.innerHTML=`<div class="cloudbar off" onclick="abrirCuenta()" title="Entrar con tu cuenta Mess">
       <span class="cb-ic">${ic('cloud',18)}</span>
@@ -3462,14 +3474,6 @@ function _pintarEstadoNube(){
   // Firebase rechaza la rama cajaDiaria/<uid> por reglas, o falla la red, la
   // conexión revienta con la sesión ya iniciada. Antes la barra decía
   // "Sincronizada" igual y el error quedaba escondido en un tooltip.
-  if(_nubeError){
-    el.innerHTML=`<div class="cloudbar off" onclick="abrirCuenta()" title="${esc(_nubeError)}">
-      <span class="cb-ic">${ic('cloud',18)}</span>
-      <span class="cb-t"><b>No se pudo sincronizar.</b> Estás viendo sólo lo de este navegador.
-        <span style="opacity:.8">${esc(_nubeError)}</span></span>
-      <span class="cb-a">Reintentar</span></div>`;
-    return;
-  }
   // Hay cambios hechos que todavía no llegaron a la nube. Decirlo es la diferencia
   // entre "se está subiendo" y "creíste que estaba guardado y no lo estaba".
   if(_pushPendiente){
@@ -3490,17 +3494,35 @@ function _marcarErrorNube(e){
   let m=(e&&e.message)||String(e||'');
   if(/permission_denied/i.test(m))
     m='Firebase rechazó el acceso a tu caja. Falta la regla de la rama cajaDiaria en la base de datos.';
+  else if(/sin_respuesta/i.test(m))
+    m='No hubo respuesta de la nube. Puede ser la conexión, o un firewall de la red bloqueando Firebase (típico en redes de oficina).';
+  else if(/no se pudo cargar firebase|failed to fetch|networkerror|load failed|network/i.test(m))
+    m='No se pudo cargar Firebase. Revisá la conexión; si estás en la red de una oficina, puede estar bloqueado.';
   _nubeError=m; _pintarEstadoNube();
 }
 setInterval(()=>{if(_user)_pintarEstadoNube()},60000);
 
 /* Arranque: si ya hay sesión de Mess, conecta sola. Si no, no molesta: la caja
    funciona igual sin nube y el usuario entra cuando quiere desde el botón. */
+/* "Conectando con la nube…" es un estado de PASO, no un lugar donde quedarse.
+   Antes, si Firebase no cargaba (sin internet, o un firewall corporativo bloqueando
+   gstatic.com — el caso de una computadora de trabajo), el error iba a parar al
+   title de un botón, invisible, y la barra se quedaba diciendo "Conectando…" para
+   siempre. Este tope corta esa espera y lo dice. */
+function _topeConexionNube(){
+  clearTimeout(_topeNubeTimer);
+  _topeNubeTimer=setTimeout(function(){
+    if(!_nubeArranco){ _nubeArranco=true; _marcarErrorNube(new Error('sin_respuesta')); }
+  },15000);
+}
+let _topeNubeTimer=null;
 function startSync(){
+  _topeConexionNube();
   return loadFirebase().then(()=>{
     initFirebase();
     return new Promise(res=>{
       firebase.auth().onAuthStateChanged(u=>{
+        clearTimeout(_topeNubeTimer);
         _nubeArranco=true;
         if(u){_nubeError='';conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_marcarErrorNube(e)})}
         else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
@@ -3679,7 +3701,11 @@ if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al rec
 setTimeout(maybeAutoBackup,1500);
 // Ya no hay configuración que preparar: la caja usa el Firebase de Mess y la
 // sesión del usuario. Si hay sesión, conecta sola; si no, espera al botón.
-setTimeout(()=>{startSync().catch(e=>setSyncBadge('Sin conexión con la nube'))},300);
+setTimeout(()=>{startSync().catch(e=>{
+  setSyncBadge('Sin conexión con la nube');
+  // Sin esto la barra se quedaba en "Conectando…" sin decir nunca qué pasó.
+  clearTimeout(_topeNubeTimer); _nubeArranco=true; _marcarErrorNube(e);
+})},300);
 
 /* ============ Candado de 4 dígitos ============
    Guarda un hash del código, no el código. Es un candado de conveniencia: evita
