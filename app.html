@@ -201,6 +201,19 @@ tbody tr:last-child td{border-bottom:none}
 .flag.warn{background:var(--red-bg);color:var(--red)}
 .flag.idle{background:rgba(100,122,145,.12);color:var(--ink3)}
 
+/* estado de la nube: sincronizada o no (lo segundo, bien visible) */
+.cloudbar{display:flex;align-items:center;gap:12px;border-radius:var(--r);padding:11px 16px;margin-bottom:12px;font-size:13px;cursor:pointer;transition:.15s;box-shadow:var(--shadow)}
+.cloudbar .cb-ic{flex-shrink:0;display:flex}
+.cloudbar .cb-t{flex:1;min-width:0;line-height:1.5}
+.cloudbar.off{background:var(--red-bg);border:1px solid var(--red);color:var(--ink)}
+.cloudbar.off .cb-ic{color:var(--red)}
+.cloudbar.off:hover{background:var(--red-dim)}
+.cloudbar .cb-a{flex-shrink:0;font-weight:600;color:var(--red);border:1px solid var(--red);border-radius:999px;padding:4px 12px;font-size:12px;white-space:nowrap}
+.cloudbar.on{background:var(--panel);border:1px solid var(--line);color:var(--ink2)}
+.cloudbar.on .cb-ic{color:var(--green)}
+.cloudbar.on:hover{border-color:var(--line2)}
+@media(max-width:640px){.cloudbar{flex-wrap:wrap}.cloudbar .cb-a{margin-left:auto}}
+
 /* "¿en qué día estoy?": fecha de hoy + estado del cierre de la caja activa */
 .todaybar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--ink2);border-radius:var(--r);padding:11px 16px;margin-bottom:16px;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
 .todaybar:hover{border-color:var(--line2)}
@@ -640,6 +653,7 @@ tbody tr:hover{background:var(--panel2)}
           <span>Préstamos</span>
         </button>
       </nav>
+      <div id="cloudBar"></div>
       <div id="todayBar"></div>
       <div id="warnBanner"></div>
       <!-- DASHBOARD -->
@@ -904,7 +918,25 @@ function newContextId(empresa,proyecto){let base=slug(empresa)+'__'+slug(proyect
 let storageOK=true;
 function userDaysKey(){return 'caja_user_days_v2::'+activeContextId+'::'+CUR}
 function loadUser(){try{const r=localStorage.getItem(userDaysKey());return r?JSON.parse(r):[]}catch(e){storageOK=false;return []}}
-function saveUser(){try{localStorage.setItem(userDaysKey(),JSON.stringify(userDays))}catch(e){storageOK=false}}
+/* Sella con la hora los días que realmente cambiaron respecto de lo ya guardado.
+   Ese sello (d.mod) es lo que después usa la fusión con la nube para saber qué
+   versión de un mismo día es la más nueva cuando se editó desde dos lugares.
+   Va acá porque TODO guardado de días pasa por saveUser/saveUserDaysFor: así no
+   hay que acordarse de sellar en cada pantalla. */
+function _sellarCambios(key,arr){
+  const sinSello=o=>{try{const c=Object.assign({},o);delete c.mod;return JSON.stringify(c)}catch(e){return null}};
+  let previos={};
+  try{(JSON.parse(localStorage.getItem(key)||'[]')||[]).forEach(d=>{if(d&&d.iso)previos[d.iso]=d})}catch(e){}
+  const ahora=Date.now();
+  (Array.isArray(arr)?arr:[]).forEach(d=>{
+    if(!d||!d.iso)return;
+    const ant=previos[d.iso];
+    if(ant&&sinSello(ant)!==null&&sinSello(ant)===sinSello(d)){ if(ant.mod&&!d.mod)d.mod=ant.mod; }
+    else d.mod=ahora;
+  });
+  return arr;
+}
+function saveUser(){try{_sellarCambios(userDaysKey(),userDays);localStorage.setItem(userDaysKey(),JSON.stringify(userDays))}catch(e){storageOK=false}}
 let userDays=loadUser();
 
 /* ============ state + derived ============ */
@@ -1161,6 +1193,7 @@ function renderAll(){
   renderKpis();renderDayMovs();renderDonut();renderDiffList();renderMonthBars();drawLine(currentRange);
   fillYearSelects();renderIndex();
   renderAnalytics();drawWeekday();renderMovs();
+  if(typeof _pintarEstadoNube==='function')_pintarEstadoNube();
   renderTodayBar();
   renderWarnBanner();
   scheduleArqueoNotif();
@@ -1901,7 +1934,7 @@ function saveLoans(){try{localStorage.setItem(LOANS_KEY,JSON.stringify(loans))}c
 let loans=loadLoans();
 function ctxLabel(c){return c.empresa+' / '+c.proyecto}
 function loadUserDaysFor(ctxId,cur){try{const r=localStorage.getItem('caja_user_days_v2::'+ctxId+'::'+cur);return r?JSON.parse(r):[]}catch(e){return []}}
-function saveUserDaysFor(ctxId,cur,arr){try{localStorage.setItem('caja_user_days_v2::'+ctxId+'::'+cur,JSON.stringify(arr))}catch(e){}}
+function saveUserDaysFor(ctxId,cur,arr){try{const k='caja_user_days_v2::'+ctxId+'::'+cur;_sellarCambios(k,arr);localStorage.setItem(k,JSON.stringify(arr))}catch(e){}}
 function baseForCtx(ctxId,cur){return (ctxId==='default'&&cur==='ARS')?BASE_SEED:[]}
 // Recorre los días REALES (no vacíos) en orden cronológico y, si el saldo inicial
 // de alguno cargado por vos (día manual o generado por un préstamo) quedó
@@ -3203,18 +3236,74 @@ function applyRemote(d){
   try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();renderCtxSelectors();renderAll();}catch(e){}
   _applyingRemote=false;
 }
-/* Cuántos días cargados tiene un paquete. Sirve para no pisar la caja de la nube
-   con una vacía: si abrís la app en un dispositivo nuevo (sin datos locales) y
-   subiéramos igual, borraríamos todo lo cargado desde los otros. */
-function _diasEn(p){
-  let n=0;
-  try{const d=(p&&p.data)||{};Object.keys(d).forEach(id=>['ARS','USD'].forEach(cur=>{const a=(d[id]||{})[cur];if(Array.isArray(a))n+=a.length}))}catch(e){}
-  return n;
+
+/* ====== FUSIÓN de la caja local con la de la nube ==========================
+   Antes se comparaba la CANTIDAD total de días y ganaba entero el lado con más:
+   si este dispositivo tenía un día de más (por ejemplo uno creado sin conexión),
+   subía su copia completa y borraba de la nube todo lo cargado desde los otros.
+   Por eso podían "desaparecer" movimientos.
+
+   Ahora se fusiona DÍA POR DÍA y nunca se pierde nada:
+   - un día que está en un solo lado se conserva siempre;
+   - si el mismo día está en los dos y ambos tienen sello de modificación, gana
+     el más nuevo;
+   - si alguno no tiene sello (registros viejos, de antes de este cambio), gana
+     el que tiene más movimientos — el lado seguro: ante la duda no se borra.
+   Lo mismo con proyectos y préstamos: unión por id, nunca se descarta uno.     */
+function _pesoDia(d){
+  if(!d)return -1;
+  return ((d.movs||[]).length)+((d.credMovs||[]).length)+((d.fisMovs||[]).length);
 }
+function _elegirDia(a,b){
+  if(!a)return b;
+  if(!b)return a;
+  const ma=a.mod||0,mb=b.mod||0;
+  if(ma&&mb)return ma>=mb?a:b;
+  return _pesoDia(b)>=_pesoDia(a)?b:a;
+}
+/* local y remoto tienen la forma de fullBackupPayload(). 'b' gana los empates,
+   así que se llama con la nube en 'b': ante paridad total manda lo compartido. */
+function fusionarCajas(local,remoto){
+  local=local||{};remoto=remoto||{};
+  const out={contexts:[],data:{},loans:[]};
+  const ctx={};
+  (local.contexts||[]).forEach(c=>{if(c&&c.id)ctx[c.id]=c});
+  (remoto.contexts||[]).forEach(c=>{if(c&&c.id)ctx[c.id]=c});
+  out.contexts=Object.keys(ctx).map(k=>ctx[k]);
+  const ids={};
+  Object.keys(local.data||{}).forEach(k=>ids[k]=1);
+  Object.keys(remoto.data||{}).forEach(k=>ids[k]=1);
+  Object.keys(ids).forEach(id=>{
+    out.data[id]={};
+    ['ARS','USD'].forEach(cur=>{
+      const porIso={};
+      const meter=arr=>{(Array.isArray(arr)?arr:[]).forEach(d=>{
+        if(!d||!d.iso)return;
+        porIso[d.iso]=_elegirDia(porIso[d.iso],d);
+      })};
+      meter(((local.data||{})[id]||{})[cur]);
+      meter(((remoto.data||{})[id]||{})[cur]);
+      out.data[id][cur]=Object.keys(porIso).sort().map(k=>porIso[k]);
+    });
+  });
+  const pr={};
+  (local.loans||[]).forEach(l=>{if(l&&l.id)pr[l.id]=l});
+  (remoto.loans||[]).forEach(l=>{if(l&&l.id)pr[l.id]=l});
+  out.loans=Object.keys(pr).map(k=>pr[k]);
+  return out;
+}
+/* ¿Cambió algo respecto de lo que hay en la nube? Sólo comparamos lo que importa
+   (proyectos, días y préstamos): updatedAt/updatedBy cambian siempre y harían
+   subir de gusto en cada arranque. */
+function _mismoContenido(a,b){
+  const limpio=p=>JSON.stringify({contexts:(p&&p.contexts)||[],data:(p&&p.data)||{},loans:(p&&p.loans)||[]});
+  try{return limpio(a)===limpio(b)}catch(e){return false}
+}
+
 function schedulePush(){
   if(!_syncReady||_applyingRemote||!_ref)return;
   clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(()=>{try{_ref.set(cloudPayload())}catch(e){}},900);
+  _pushTimer=setTimeout(()=>{try{_ref.set(cloudPayload());_marcarSincro()}catch(e){}},900);
 }
 
 /* Conecta la caja del usuario ya autenticado. */
@@ -3224,24 +3313,66 @@ function conectarCaja(user){
   _ref=_db.ref(CAJA_RUTA+'/'+user.uid);
   return _ref.once('value').then(snap=>{
     const remoto=snap.val();
+    const local=cloudPayload();
     if(remoto){
-      const local=cloudPayload();
-      // Si el dispositivo no tiene nada cargado, bajamos. Si tiene más que la
-      // nube, subimos. Nunca pisamos la nube con una caja vacía.
-      if(_diasEn(local)===0||_diasEn(remoto)>=_diasEn(local)){applyRemote(remoto);_syncReady=true}
-      else{_syncReady=true;_ref.set(local)}
+      // Fusión día por día: se quedan los dos lados. Si la fusión agrega algo que
+      // la nube no tenía, la subimos; si no, no escribimos de gusto.
+      const fus=fusionarCajas(local,remoto);
+      applyRemote(fus);
+      _syncReady=true;
+      if(!_mismoContenido(fus,remoto))_ref.set({...fus,updatedBy:deviceId(),updatedAt:Date.now()});
     }else{
       _syncReady=true;
-      if(_diasEn(cloudPayload())>0)_ref.set(cloudPayload());
+      if(_diasEn(local)>0)_ref.set(cloudPayload());
     }
+    _marcarSincro();
     _ref.on('value',s=>{
       const d=s.val();
       if(!d||d.updatedBy===deviceId())return;
-      applyRemote(d);toast('Caja actualizada desde otro dispositivo');
+      // También acá fusionamos: si este dispositivo tenía algo todavía sin subir,
+      // lo que llega de afuera no debe borrarlo.
+      const mio=cloudPayload();
+      const fus=fusionarCajas(mio,d);
+      applyRemote(fus);
+      _marcarSincro();
+      if(!_mismoContenido(fus,d))_ref.set({...fus,updatedBy:deviceId(),updatedAt:Date.now()});
+      toast('Caja actualizada desde otro dispositivo');
     },err=>{setSyncBadge('Sincronización con error: '+(err&&err.message||err))});
     setSyncBadge('Nube conectada ✓ ('+(user.email||'tu cuenta')+')');
+    _pintarEstadoNube();
   });
 }
+/* Última vez que esta pantalla habló con la nube — se muestra en la barra de
+   arriba para poder responder "¿está actualizada?" de un vistazo. */
+let _ultimaSincro=0;
+function _marcarSincro(){_ultimaSincro=Date.now();_pintarEstadoNube()}
+
+/* Cartel de estado de la nube, arriba de todo. Sin esto, abrir la caja en otro
+   navegador SIN haber entrado con la cuenta se ve exactamente igual que una caja
+   sincronizada — pero muestra datos viejos y cualquier cosa que cargues ahí no
+   le llega a nadie. Ahora lo dice y se puede entrar de un toque. */
+let _nubeArranco=false; // hasta que Firebase no contestó, no acusamos "sin sincronizar"
+function _pintarEstadoNube(){
+  const el=document.getElementById('cloudBar');if(!el)return;
+  if(!_nubeArranco&&!_user){
+    el.innerHTML=`<div class="cloudbar on"><span class="cb-ic">${ic('cloud',18)}</span>
+      <span class="cb-t">Conectando con la nube…</span></div>`;
+    return;
+  }
+  if(!_user){
+    el.innerHTML=`<div class="cloudbar off" onclick="abrirCuenta()" title="Entrar con tu cuenta Mess">
+      <span class="cb-ic">${ic('cloud',18)}</span>
+      <span class="cb-t"><b>Esta caja no está sincronizada.</b> Estás viendo sólo lo guardado en este navegador, y lo que cargues acá no le llega a tus otros dispositivos.</span>
+      <span class="cb-a">Entrar con mi cuenta</span></div>`;
+    return;
+  }
+  const seg=_ultimaSincro?Math.round((Date.now()-_ultimaSincro)/1000):null;
+  const cuando=seg===null?'—':(seg<60?'hace instantes':(seg<3600?'hace '+Math.round(seg/60)+' min':'hace '+Math.round(seg/3600)+' h'));
+  el.innerHTML=`<div class="cloudbar on" onclick="abrirCuenta()" title="Tu cuenta y la sincronización">
+    <span class="cb-ic">${ic('cloud',18)}</span>
+    <span class="cb-t">Sincronizada con <b>${esc(_user.email||'tu cuenta')}</b> · ${cuando}</span></div>`;
+}
+setInterval(()=>{if(_user)_pintarEstadoNube()},60000);
 
 /* Arranque: si ya hay sesión de Mess, conecta sola. Si no, no molesta: la caja
    funciona igual sin nube y el usuario entra cuando quiere desde el botón. */
@@ -3250,8 +3381,9 @@ function startSync(){
     initFirebase();
     return new Promise(res=>{
       firebase.auth().onAuthStateChanged(u=>{
-        if(u){conectarCaja(u).catch(e=>setSyncBadge('Sincronización con error: '+((e&&e.message)||e)))}
-        else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess')}
+        _nubeArranco=true;
+        if(u){conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_pintarEstadoNube()})}
+        else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
         res();
       });
     });
