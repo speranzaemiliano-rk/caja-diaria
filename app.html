@@ -3256,6 +3256,15 @@ function applyRemote(d){
    - si alguno no tiene sello (registros viejos, de antes de este cambio), gana
      el que tiene más movimientos — el lado seguro: ante la duda no se borra.
    Lo mismo con proyectos y préstamos: unión por id, nunca se descarta uno.     */
+/* Cuántos días cargados tiene un paquete. Se usa para no crear la caja en la nube
+   con una vacía la primera vez. (Al pasar a la fusión día por día se había borrado
+   por error, y quedaba llamada más abajo: la PRIMERA sincronización —justo cuando
+   la nube todavía está vacía— reventaba con "_diasEn is not defined".) */
+function _diasEn(p){
+  let n=0;
+  try{const d=(p&&p.data)||{};Object.keys(d).forEach(id=>['ARS','USD'].forEach(cur=>{const a=(d[id]||{})[cur];if(Array.isArray(a))n+=a.length}))}catch(e){}
+  return n;
+}
 function _pesoDia(d){
   if(!d)return -1;
   return ((d.movs||[]).length)+((d.credMovs||[]).length)+((d.fisMovs||[]).length);
