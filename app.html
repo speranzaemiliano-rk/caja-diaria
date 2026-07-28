@@ -209,6 +209,8 @@ tbody tr:last-child td{border-bottom:none}
 .cloudbar.off .cb-ic{color:var(--red)}
 .cloudbar.off:hover{background:var(--red-dim)}
 .cloudbar .cb-a{flex-shrink:0;font-weight:600;color:var(--red);border:1px solid var(--red);border-radius:999px;padding:4px 12px;font-size:12px;white-space:nowrap}
+.cloudbar.pend{background:var(--panel);border:1px solid var(--gold,#C9A84C);border-left:3px solid var(--gold,#C9A84C);color:var(--ink)}
+.cloudbar.pend .cb-ic{color:var(--gold,#C9A84C);animation:warnpulse 1.4s ease-in-out infinite}
 .cloudbar.on{background:var(--panel);border:1px solid var(--line);color:var(--ink2)}
 .cloudbar.on .cb-ic{color:var(--green)}
 .cloudbar.on:hover{border-color:var(--line2)}
@@ -3327,18 +3329,51 @@ function _mismoContenido(a,b){
    y si cambió mientras calculábamos, vuelve a llamar al callback con el valor
    nuevo. Fusionamos contra eso, no contra una copia vieja. */
 function _subirFusionando(){
-  if(!_ref)return Promise.resolve(null);
+  if(!_ref||!_syncReady)return Promise.resolve(null);
   const local=cloudPayload();
   return _ref.transaction(function(remoto){
     const fus=fusionarCajas(local,remoto||{});
     return Object.assign({},fus,{updatedBy:deviceId(),updatedAt:Date.now()});
-  }).then(function(r){_marcarSincro();return r})
-    .catch(function(e){_marcarErrorNube(e);return null});
+  }).then(function(r){
+    // Recién acá el cambio está EN LA NUBE. Hasta este punto seguía pendiente.
+    _pushPendiente=false; _reintentoMs=4000;
+    clearTimeout(_reintentoTimer);
+    _marcarSincro(); return r;
+  }).catch(function(e){
+    // No se pierde: se vuelve a marcar pendiente y se reintenta. Marcarlo acá es
+    // imprescindible: _programarReintento() sólo reintenta si hay algo pendiente,
+    // así que sin esto un fallo de subida se abandonaba en silencio.
+    _pushPendiente=true;
+    _marcarErrorNube(e); _programarReintento(); return null;
+  });
 }
+
+/* NADA DE LO QUE EDITÁS SE PUEDE PERDER PORQUE LA NUBE NO ESTÉ LISTA.
+
+   Antes, si la sincronización no estaba disponible (sin sesión, sin red, o —el
+   caso real— Firebase rechazando la rama cajaDiaria por falta de regla), tanto el
+   interceptor de localStorage como schedulePush() DESCARTABAN el cambio en
+   silencio: quedaba guardado en ese navegador y no subía nunca, sin reintento y
+   sin ningún aviso. Alguien podía trabajar toda una jornada en una computadora y
+   que nada de eso llegara a los demás dispositivos.
+
+   Ahora todo cambio marca "pendiente" pase lo que pase, y lo pendiente se sube en
+   cuanto haya con qué: al conectar, al recuperar la red, o por reintento con
+   espera creciente. La barra de arriba lo muestra mientras tanto. */
+let _pushPendiente=false, _reintentoTimer=null, _reintentoMs=4000;
+function _programarReintento(){
+  clearTimeout(_reintentoTimer);
+  _reintentoTimer=setTimeout(function(){ if(_pushPendiente)_subirFusionando(); },_reintentoMs);
+  _reintentoMs=Math.min(_reintentoMs*2,60000); // 4s, 8s, 16s… hasta 1 min
+}
+function _hayCambiosSinSubir(){ return _pushPendiente; }
 function schedulePush(){
-  if(!_syncReady||_applyingRemote||!_ref)return;
+  if(_applyingRemote)return;              // lo que viene de la nube no se re-sube
+  _pushPendiente=true;                    // ← se marca SIEMPRE, aunque no se pueda subir todavía
+  _pintarEstadoNube();
+  if(!_syncReady||!_ref)return;           // queda pendiente; sube al conectar
   clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(function(){try{_subirFusionando()}catch(e){}},900);
+  _pushTimer=setTimeout(function(){try{_subirFusionando()}catch(e){_programarReintento()}},900);
 }
 
 /* Conecta la caja del usuario ya autenticado. */
@@ -3355,12 +3390,19 @@ function conectarCaja(user){
       const fus=fusionarCajas(local,remoto);
       applyRemote(fus);
       _syncReady=true;
-      if(!_mismoContenido(fus,remoto))_subirFusionando();
+      // También sube si había cambios pendientes de una sesión en la que la nube
+      // no estaba disponible: es la red de seguridad de todo lo editado offline.
+      if(_pushPendiente||!_mismoContenido(fus,remoto))_subirFusionando(); else _marcarSincro();
     }else{
       _syncReady=true;
-      if(_diasEn(local)>0)_subirFusionando();
+      if(_pushPendiente||_diasEn(local)>0)_subirFusionando(); else _marcarSincro();
     }
-    _marcarSincro();
+    // Cuando vuelve la conexión, lo pendiente se sube solo.
+    try{
+      _db.ref('.info/connected').on('value',function(s){
+        if(s.val()===true&&_pushPendiente&&_syncReady){_reintentoMs=4000;_subirFusionando();}
+      });
+    }catch(e){}
     _ref.on('value',s=>{
       const d=s.val();
       if(!d||d.updatedBy===deviceId())return;
@@ -3411,6 +3453,15 @@ function _pintarEstadoNube(){
       <span class="cb-t"><b>No se pudo sincronizar.</b> Estás viendo sólo lo de este navegador.
         <span style="opacity:.8">${esc(_nubeError)}</span></span>
       <span class="cb-a">Reintentar</span></div>`;
+    return;
+  }
+  // Hay cambios hechos que todavía no llegaron a la nube. Decirlo es la diferencia
+  // entre "se está subiendo" y "creíste que estaba guardado y no lo estaba".
+  if(_pushPendiente){
+    el.innerHTML=`<div class="cloudbar pend" onclick="abrirCuenta()" title="Se están subiendo los cambios">
+      <span class="cb-ic">${ic('cloud',18)}</span>
+      <span class="cb-t"><b>Guardando en la nube…</b> Hay cambios de este dispositivo que todavía no se subieron.
+        No cierres la app hasta que diga «Sincronizada».</span></div>`;
     return;
   }
   const seg=_ultimaSincro?Math.round((Date.now()-_ultimaSincro)/1000):null;
@@ -3517,7 +3568,9 @@ function salirCuenta(){
 document.getElementById('syncBtn').onclick=abrirCuenta;
 
 /* Interceptar guardados locales para empujar a la nube (no invasivo) */
-(function(){const _si=localStorage.setItem.bind(localStorage);localStorage.setItem=function(k,v){_si(k,v);try{if(!_applyingRemote&&_syncReady&&/^caja_(contexts_v1|user_days_v2|loans_v1)/.test(k))schedulePush()}catch(e){}}})();
+// Ojo: NO se filtra por _syncReady acá. Si la nube todavía no está lista, el cambio
+// tiene que quedar marcado como pendiente igual — filtrarlo era perderlo para siempre.
+(function(){const _si=localStorage.setItem.bind(localStorage);localStorage.setItem=function(k,v){_si(k,v);try{if(!_applyingRemote&&/^caja_(contexts_v1|user_days_v2|loans_v1)/.test(k))schedulePush()}catch(e){}}})();
 
 /* ============ notificación diaria de arqueo (app nativa) ============ */
 // Reusa el runtime de Capacitor que el wrapper nativo (ver MOBILE.md) inyecta
