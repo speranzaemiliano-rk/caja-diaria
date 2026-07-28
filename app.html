@@ -3271,12 +3271,27 @@ function _pesoDia(d){
   if(!d)return -1;
   return ((d.movs||[]).length)+((d.credMovs||[]).length)+((d.fisMovs||[]).length);
 }
+/* Elegir entre dos versiones del MISMO día.
+
+   ⚠️ El desempate "gana el que tiene más movimientos" NO se puede aplicar cuando
+   uno de los dos lados fue editado de verdad: BORRAR algo (un movimiento, un
+   crédito, una parte del arqueo) deja el día con MENOS ítems, así que la copia
+   vieja de la nube ganaba y lo borrado volvía a aparecer. Pasó de verdad: se
+   eliminaba un crédito a cobrar y seguía sumando al saldo del día.
+
+   El sello `mod` es lo que distingue "esto lo editó alguien" de "esta es una copia
+   vieja": sólo se pone al guardar un cambio real. Por eso, si un lado está sellado
+   y el otro no, gana el sellado aunque tenga menos ítems. El desempate por cantidad
+   queda sólo para cuando NINGUNO tiene sello (dos copias viejas, anteriores a que
+   existiera `mod`), donde sí es el criterio seguro: ante la duda, no borrar. */
 function _elegirDia(a,b){
   if(!a)return b;
   if(!b)return a;
   const ma=a.mod||0,mb=b.mod||0;
-  if(ma&&mb)return ma>=mb?a:b;
-  return _pesoDia(b)>=_pesoDia(a)?b:a;
+  if(ma&&mb)return ma>=mb?a:b;   // los dos editados: gana el más nuevo
+  if(ma&&!mb)return a;           // sólo 'a' fue editado: manda 'a', aunque tenga menos
+  if(!ma&&mb)return b;           // ídem al revés
+  return _pesoDia(b)>=_pesoDia(a)?b:a; // ninguno sellado: ante la duda, el más completo
 }
 /* local y remoto tienen la forma de fullBackupPayload(). 'b' gana los empates,
    así que se llama con la nube en 'b': ante paridad total manda lo compartido. */
