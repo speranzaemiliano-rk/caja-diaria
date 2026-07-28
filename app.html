@@ -3343,7 +3343,7 @@ function conectarCaja(user){
       _marcarSincro();
       if(!_mismoContenido(fus,d))_ref.set({...fus,updatedBy:deviceId(),updatedAt:Date.now()});
       toast('Caja actualizada desde otro dispositivo');
-    },err=>{setSyncBadge('Sincronización con error: '+(err&&err.message||err))});
+    },err=>{setSyncBadge('Sincronización con error: '+(err&&err.message||err));_marcarErrorNube(err)});
     setSyncBadge('Nube conectada ✓ ('+(user.email||'tu cuenta')+')');
     _pintarEstadoNube();
   });
@@ -3351,7 +3351,7 @@ function conectarCaja(user){
 /* Última vez que esta pantalla habló con la nube — se muestra en la barra de
    arriba para poder responder "¿está actualizada?" de un vistazo. */
 let _ultimaSincro=0;
-function _marcarSincro(){_ultimaSincro=Date.now();_pintarEstadoNube()}
+function _marcarSincro(){_ultimaSincro=Date.now();_nubeError='';_pintarEstadoNube()}
 
 /* Cartel de estado de la nube, arriba de todo. Sin esto, abrir la caja en otro
    navegador SIN haber entrado con la cuenta se ve exactamente igual que una caja
@@ -3372,11 +3372,30 @@ function _pintarEstadoNube(){
       <span class="cb-a">Entrar con mi cuenta</span></div>`;
     return;
   }
+  // Haber entrado con la cuenta NO quiere decir que la sincronización ande: si
+  // Firebase rechaza la rama cajaDiaria/<uid> por reglas, o falla la red, la
+  // conexión revienta con la sesión ya iniciada. Antes la barra decía
+  // "Sincronizada" igual y el error quedaba escondido en un tooltip.
+  if(_nubeError){
+    el.innerHTML=`<div class="cloudbar off" onclick="abrirCuenta()" title="${esc(_nubeError)}">
+      <span class="cb-ic">${ic('cloud',18)}</span>
+      <span class="cb-t"><b>No se pudo sincronizar.</b> Estás viendo sólo lo de este navegador.
+        <span style="opacity:.8">${esc(_nubeError)}</span></span>
+      <span class="cb-a">Reintentar</span></div>`;
+    return;
+  }
   const seg=_ultimaSincro?Math.round((Date.now()-_ultimaSincro)/1000):null;
   const cuando=seg===null?'—':(seg<60?'hace instantes':(seg<3600?'hace '+Math.round(seg/60)+' min':'hace '+Math.round(seg/3600)+' h'));
   el.innerHTML=`<div class="cloudbar on" onclick="abrirCuenta()" title="Tu cuenta y la sincronización">
     <span class="cb-ic">${ic('cloud',18)}</span>
     <span class="cb-t">Sincronizada con <b>${esc(_user.email||'tu cuenta')}</b> · ${cuando}</span></div>`;
+}
+let _nubeError='';
+function _marcarErrorNube(e){
+  let m=(e&&e.message)||String(e||'');
+  if(/permission_denied/i.test(m))
+    m='Firebase rechazó el acceso a tu caja. Falta la regla de la rama cajaDiaria en la base de datos.';
+  _nubeError=m; _pintarEstadoNube();
 }
 setInterval(()=>{if(_user)_pintarEstadoNube()},60000);
 
@@ -3388,7 +3407,7 @@ function startSync(){
     return new Promise(res=>{
       firebase.auth().onAuthStateChanged(u=>{
         _nubeArranco=true;
-        if(u){conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_pintarEstadoNube()})}
+        if(u){_nubeError='';conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_marcarErrorNube(e)})}
         else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
         res();
       });
