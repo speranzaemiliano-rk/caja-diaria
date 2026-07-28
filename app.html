@@ -2865,9 +2865,13 @@ document.getElementById('importFile').onchange=e=>{
         ['ARS','USD'].forEach(cur=>{
           const arr=Array.isArray(bucket[cur])?bucket[cur]:[];
           if(!arr.length)return;
-          const map={};loadUserDaysFor(ctxId,cur).forEach(d=>map[d.iso]=d);
-          arr.forEach(d=>{if(d&&d.iso&&d.src==='user'){map[d.iso]=d;days++}});
-          saveUserDaysFor(ctxId,cur,Object.values(map));
+          // Importar NO pisa: se resuelve día por día con el mismo criterio que la
+          // fusión con la nube (gana el sello más nuevo; sin sello, el que tiene más
+          // movimientos). Antes ganaba siempre el archivo, así que importar un
+          // respaldo viejo borraba lo cargado después en este dispositivo.
+          const map={};loadUserDaysFor(ctxId,cur).forEach(d=>{if(d&&d.iso)map[d.iso]=d});
+          arr.forEach(d=>{if(d&&d.iso&&d.src==='user'){map[d.iso]=_elegirDia(map[d.iso],d);days++}});
+          saveUserDaysFor(ctxId,cur,Object.keys(map).sort().map(k=>map[k]));
         });
       });
       parsed.contexts.forEach(c=>{if(c&&c.id&&!contexts.some(x=>x.id===c.id))contexts.push({id:c.id,empresa:c.empresa,proyecto:c.proyecto})});
@@ -2880,8 +2884,10 @@ document.getElementById('importFile').onchange=e=>{
       userDays=loadUser();renderCtxSelectors();renderAll();
       toast('Respaldo completo importado: '+days+' día(s) en '+parsed.contexts.length+' empresa(s)/proyecto(s)');
     }else if(Array.isArray(parsed)){
-      const map={};userDays.forEach(d=>map[d.iso]=d);parsed.forEach(d=>{if(d&&d.iso&&d.src==='user')map[d.iso]=d});
-      userDays=Object.values(map);saveUser();renderAll();toast(parsed.length+' día(s) importado(s)');
+      // Ídem para el respaldo viejo (una sola caja): fusiona, no reemplaza.
+      const map={};userDays.forEach(d=>{if(d&&d.iso)map[d.iso]=d});
+      parsed.forEach(d=>{if(d&&d.iso&&d.src==='user')map[d.iso]=_elegirDia(map[d.iso],d)});
+      userDays=Object.keys(map).sort().map(k=>map[k]);saveUser();renderAll();toast(parsed.length+' día(s) importado(s)');
     }else throw 0;
   }catch(err){alert('El archivo no es un respaldo válido.')}e.target.value=''};
   r.readAsText(f);
