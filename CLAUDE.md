@@ -4,6 +4,19 @@ App web para **control de caja diaria** de comercios (kioscos, locales, freelanc
 ingresos/egresos por día, ver saldo en vivo, arqueo, préstamos entre empresas, exportar y respaldar.
 Idioma: **español rioplatense** (voseo: "registrá", "cerrá", "probá").
 
+## Cambios recientes (v82–v85, 2026-07) — leer esto: actualiza bullets viejos de más abajo
+
+- **v82 · El crédito suma al saldo final (cambia el modelo de `sf`).** Antes `sf = si + ing + egr` (solo efectivo). Ahora **`sf = si + ing + egr + credAdj`**: al fiar (salida de efectivo + un crédito a cobrar), el efectivo baja como egreso pero el crédito lo compensa, así el **Saldo final ya no baja** — refleja el total (efectivo + créditos). `cascadeChain()` es la fuente de verdad y encadena `sf` día a día incluyendo el crédito acumulado. En consecuencia:
+  - La **diferencia de caja** quedó como `dif = sf − (fis + cred)`, que ahora equivale a **efectivo esperado − efectivo contado** (el crédito se cancela de los dos lados) — mide solo el descuadre del efectivo. En pantalla, "Según sistema" (`sf`), "Caja real" (`fis+cred`) y la diferencia cierran entre sí.
+  - Para obtener el efectivo puro de un día: `efectivo = sf − cred`. Los desgloses "Efectivo · Crédito" de los KPIs (`Efectivo = sf − cred`) ahora dan bien.
+  - Días **sin** créditos quedan idénticos. Los días viejos se recalculan solos al abrir (via `recompute()`→`cascadeChain()`), no hay que re-guardar nada.
+  - ⚠️ Esto **actualiza** los bullets de más abajo que dicen "los números grandes no cambian / `sf` es el cálculo de movimientos de siempre / `dif = sf − fis`" — quedaron viejos.
+- **v82 · Borrar un día no "revive" al sincronizar (lápida).** `deleteDay` ya no saca el día del array (la fusión con la nube lo re-agregaba): deja un **día vacío** (`empty:true`) con sello `mod` nuevo, así para la fusión es la versión más reciente y el borrado se propaga. `recompute()` filtra los vacíos.
+- **v83 · El detalle de créditos ("Ver") acotado al día.** `creditNotesBreakdown(ctxId,cur,hastaIso)` y `creditNoteEntries(note,hastaIso)` toman una fecha opcional: abierto desde un día puntual, solo suma los créditos **hasta esa fecha** (así entrar al 7/7 no muestra un crédito dado el 24/7). `openCreditDetail(hastaIso)` guarda el alcance en `creditDetailScope` para que los re-render internos (editar/eliminar un ajuste) no vuelvan a la vista global. Sin `hastaIso` sigue siendo la vista global histórica. Esto **actualiza** el bullet que dice que el desglose suma "todos los días reales".
+- **v84 · Hoja de cálculo flotante** (calculadora tipo cinta). Bloque autocontenido al final de `app.html` (buscar `mcalc`/`evalLine`): botón flotante abajo a la derecha → panel arrastrable, una cuenta por línea (`+ - * / ( ) %`), total en vivo, Copiar/Limpiar. 100% local (guarda contenido/posición en `localStorage`, no toca la caja ni la nube). La evaluación **sanitiza** a solo dígitos y operadores antes de `Function()` (no ejecuta código). Queda debajo del candado (`pinGate`).
+- **v85 · Columna "Diferencia" en el resumen por días** (`renderIndex`, tabla del Índice): muestra `d.dif` con color (rojo si `isWarn`, verde si chico, "—" si no hay arqueo) después de "Saldo final".
+- **Multiusuario pendiente (P1, ver `SECURITY.md` y `AUDITORIA-2026-07.md` en el repo del Sistema):** borrar un **préstamo** o una **empresa** todavía puede revivir al sincronizar (falta darle la misma lápida con `mod` que ya tienen los días; `fusionarCajas` los une por id sin lápida).
+
 ## Qué hay en el repo (sitio estático, sin build)
 
 **El sitio web vive en la raíz del repo, siempre** (`index.html`, `app.html`,
