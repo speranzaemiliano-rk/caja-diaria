@@ -3437,16 +3437,20 @@ function conectarCaja(user){
 /* Última vez que esta pantalla habló con la nube — se muestra en la barra de
    arriba para poder responder "¿está actualizada?" de un vistazo. */
 let _ultimaSincro=0;
-function _marcarSincro(){_ultimaSincro=Date.now();_nubeError='';_pintarEstadoNube()}
+function _marcarSincro(){_ultimaSincro=Date.now();_nubeError='';_nubeResuelta=true;clearTimeout(_topeNubeTimer);_pintarEstadoNube()}
 
 /* Cartel de estado de la nube, arriba de todo. Sin esto, abrir la caja en otro
    navegador SIN haber entrado con la cuenta se ve exactamente igual que una caja
    sincronizada — pero muestra datos viejos y cualquier cosa que cargues ahí no
    le llega a nadie. Ahora lo dice y se puede entrar de un toque. */
 let _nubeArranco=false; // hasta que Firebase no contestó, no acusamos "sin sincronizar"
+let _nubeResuelta=false; // llegamos a un estado DEFINITIVO (sincronizada / error / sin sesión)
 function _pintarEstadoNube(){
   const el=document.getElementById('cloudBar');if(!el)return;
-  if(!_nubeArranco&&!_user){
+  // "Conectando…" mientras NO haya un estado definitivo. Cubre también el cuelgue
+  // de la lectura de la base con el login ya hecho (antes eso mostraba un
+  // "Sincronizada" falso). El corte garantiza que esto no dure más de 12 s.
+  if(!_nubeResuelta && !_nubeError){
     el.innerHTML=`<div class="cloudbar on"><span class="cb-ic">${ic('cloud',18)}</span>
       <span class="cb-t">Conectando con la nube…</span></div>`;
     return;
@@ -3498,7 +3502,7 @@ function _marcarErrorNube(e){
     m='No hubo respuesta de la nube. Puede ser la conexión, o un firewall de la red bloqueando Firebase (típico en redes de oficina).';
   else if(/no se pudo cargar firebase|failed to fetch|networkerror|load failed|network/i.test(m))
     m='No se pudo cargar Firebase. Revisá la conexión; si estás en la red de una oficina, puede estar bloqueado.';
-  _nubeError=m; _pintarEstadoNube();
+  _nubeError=m; _nubeResuelta=true; clearTimeout(_topeNubeTimer); _pintarEstadoNube();
 }
 setInterval(()=>{if(_user)_pintarEstadoNube()},60000);
 
@@ -3509,23 +3513,31 @@ setInterval(()=>{if(_user)_pintarEstadoNube()},60000);
    gstatic.com — el caso de una computadora de trabajo), el error iba a parar al
    title de un botón, invisible, y la barra se quedaba diciendo "Conectando…" para
    siempre. Este tope corta esa espera y lo dice. */
+// El corte vigila TODO el arranque hasta un estado definitivo (sincronizada,
+// error, o sin sesión), no sólo hasta que el login responde. Antes se cancelaba
+// apenas Auth contestaba; pero en una red de oficina el login funciona (HTTPS) y
+// después la LECTURA de la base se cuelga (websocket bloqueado), y ahí ya no había
+// nada que rescatara el cuelgue: la barra quedaba pegada en "Conectando…".
 function _topeConexionNube(){
   clearTimeout(_topeNubeTimer);
   _topeNubeTimer=setTimeout(function(){
-    if(!_nubeArranco){ _nubeArranco=true; _marcarErrorNube(new Error('sin_respuesta')); }
-  },15000);
+    if(!_nubeResuelta){ _nubeArranco=true; _marcarErrorNube(new Error('sin_respuesta')); }
+  },12000);
 }
 let _topeNubeTimer=null;
 function startSync(){
+  _nubeResuelta=false;
   _topeConexionNube();
   return loadFirebase().then(()=>{
     initFirebase();
     return new Promise(res=>{
       firebase.auth().onAuthStateChanged(u=>{
-        clearTimeout(_topeNubeTimer);
         _nubeArranco=true;
+        // OJO: no se marca "resuelta" acá si hay usuario — conectarCaja todavía tiene
+        // que leer la base, y eso puede colgarse. Se resuelve en _marcarSincro (éxito)
+        // o en el corte/_marcarErrorNube (fallo). El corte sigue armado a propósito.
         if(u){_nubeError='';conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_marcarErrorNube(e)})}
-        else{_user=null;_syncReady=false;_ref=null;setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
+        else{_user=null;_syncReady=false;_ref=null;_nubeResuelta=true;clearTimeout(_topeNubeTimer);setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
         res();
       });
     });
@@ -3719,7 +3731,8 @@ setTimeout(maybeAutoBackup,1500);
 setTimeout(()=>{startSync().catch(e=>{
   setSyncBadge('Sin conexión con la nube');
   // Sin esto la barra se quedaba en "Conectando…" sin decir nunca qué pasó.
-  clearTimeout(_topeNubeTimer); _nubeArranco=true; _marcarErrorNube(e);
+  // _marcarErrorNube ya marca resuelta y cancela el corte.
+  _nubeArranco=true; _marcarErrorNube(e);
 })},300);
 
 /* ============ Candado de 4 dígitos ============
