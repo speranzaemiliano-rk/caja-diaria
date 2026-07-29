@@ -946,14 +946,32 @@ const BASE_SEED=DATA.map(d=>({...d,src:'base'})); // histórico importado: solo 
 function baseFor(){return (activeContextId==='default'&&CUR==='ARS')?BASE_SEED:[]}
 let days,real,last,first,totIng,totEgr,totMov,warnDays,monthsArr,years;
 function isWarn(d){return !d.empty&&d.dif!=null&&Math.abs(d.dif)>1000&&Math.abs(d.dif)<Math.abs(d.sf||0)*0.5}
+// Garantiza que un día tenga sus listas como arrays y sus partes de fecha, para
+// que NINGÚN render reviente por un campo faltante. Un solo día malformado hacía
+// crashear renderKpis al arrancar, y eso cortaba el init ANTES de que empezara la
+// sincronización — de ahí el "Conectando con la nube…" pegado y la caja sin
+// sincronizar. Se normaliza en el lugar (mutando el día) así queda sano al guardar.
+function _normDia(d){
+  if(!d||typeof d!=='object')return d;
+  if(!Array.isArray(d.movs))d.movs=[];
+  if(!Array.isArray(d.credMovs))d.credMovs=[];
+  if(!Array.isArray(d.fisMovs))d.fisMovs=[];
+  if(!Array.isArray(d.caja))d.caja=[];
+  if(d.iso&&(d.y==null||d.m==null||d.d==null)){var pp=String(d.iso).split('-');d.y=+pp[0];d.m=+pp[1];d.d=+pp[2];}
+  if(!d.date&&d.iso){var q=String(d.iso).split('-');d.date=q[2]+'/'+q[1]+'/'+q[0];}
+  if(!d.wd&&d.iso&&typeof wdOf==='function'){try{d.wd=wdOf(d.iso)}catch(e){d.wd=''}}
+  if(d.nmov==null)d.nmov=d.movs.length;
+  return d;
+}
 function recompute(){
+  (userDays||[]).forEach(_normDia); // sanear ANTES de cualquier cálculo/render
   // Normaliza el saldo encadenado de créditos a cobrar (y si/sf) por si hay días
   // guardados antes de recalcular en cascada — no depende de haber editado algo.
   cascadeChain(activeContextId,CUR,userDays);
   const map={};
   baseFor().forEach(d=>map[d.iso]=d);
   userDays.forEach(d=>map[d.iso]=d); // user day overrides base (incl. empty placeholders)
-  days=Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  days=Object.values(map).map(_normDia).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
   real=days.filter(d=>!d.empty);
   first=real[0]||null;last=real[real.length-1]||null;
   totIng=real.reduce((s,d)=>s+(d.ing||0),0);
@@ -1260,7 +1278,8 @@ function renderKpis(){
   // Los totales/gráficos viven en Análisis.
   const d=last;
   if(!d){document.getElementById('kpis').innerHTML=`<div class="kpi acc" style="max-width:440px"><div class="lab">◆ Saldo de caja</div><div class="num mono">${peso(0)}</div><div class="meta">sin movimientos aún</div></div>`;return}
-  const nin=d.movs.filter(m=>m.imp>0).length,nout=d.movs.filter(m=>m.imp<0).length;
+  const _dm=d.movs||[];
+  const nin=_dm.filter(m=>m.imp>0).length,nout=_dm.filter(m=>m.imp<0).length;
   // Los números grandes NO cambian (son los de siempre: si/ing/egr/sf, el saldo
   // "de movimientos"). El desglose de abajo reparte ESE mismo número en sus 2
   // partes: Efectivo = número grande menos el crédito, Crédito = el acumulado de
@@ -3707,8 +3726,12 @@ function openNotifSettings(){
 document.getElementById('notifBtn').onclick=openNotifSettings;
 
 /* ============ init ============ */
-renderCtxSelectors();
-renderAll();
+// Los renders van en try/catch: un error dibujando NO puede impedir que arranque
+// la sincronización (que se agenda más abajo). Antes, si renderAll tiraba, la
+// ejecución se cortaba ahí y la línea de startSync nunca corría → barra pegada en
+// "Conectando…" y caja sin sincronizar.
+try{ renderCtxSelectors(); }catch(e){ console.error('renderCtxSelectors:',e); }
+try{ renderAll(); }catch(e){ console.error('renderAll:',e); }
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
 
 /* Última red de seguridad contra la pérdida de datos en máquinas donde el
