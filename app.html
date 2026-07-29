@@ -1082,7 +1082,7 @@ document.getElementById('ctxEmpresaSel').onchange=e=>{
     const proj=(prompt('Nombre del primer proyecto para "'+name+'":','Principal')||'').trim();
     if(!proj){renderCtxSelectors();return}
     const id=newContextId(name,proj);
-    contexts.push({id,empresa:name,proyecto:proj});saveContexts();
+    contexts.push({id,empresa:name,proyecto:proj,mod:Date.now()});saveContexts();
     switchContext(id);return;
   }
   const target=contexts.find(c=>c.empresa===v);
@@ -1095,7 +1095,7 @@ document.getElementById('ctxProyectoSel').onchange=e=>{
     const proj=(prompt('Nombre del nuevo proyecto para "'+cur.empresa+'":')||'').trim();
     if(!proj){renderCtxSelectors();return}
     const id=newContextId(cur.empresa,proj);
-    contexts.push({id,empresa:cur.empresa,proyecto:proj});saveContexts();
+    contexts.push({id,empresa:cur.empresa,proyecto:proj,mod:Date.now()});saveContexts();
     switchContext(id);return;
   }
   switchContext(v);
@@ -1121,14 +1121,14 @@ document.getElementById('ctxEmpresaEdit').onclick=()=>{
   const cur=activeContext(),oldName=cur.empresa;
   const name=(prompt('Nuevo nombre para la empresa "'+oldName+'":',oldName)||'').trim();
   if(!name||name===oldName)return;
-  contexts.forEach(c=>{if(c.empresa===oldName)c.empresa=name});
+  contexts.forEach(c=>{if(c.empresa===oldName){c.empresa=name;c.mod=Date.now()}});
   saveContexts();renderCtxSelectors();toast('Empresa renombrada a "'+name+'"');
 };
 document.getElementById('ctxProyectoEdit').onclick=()=>{
   const cur=activeContext(),oldName=cur.proyecto;
   const name=(prompt('Nuevo nombre para el proyecto "'+oldName+'":',oldName)||'').trim();
   if(!name||name===oldName)return;
-  cur.proyecto=name;saveContexts();renderCtxSelectors();toast('Proyecto renombrado a "'+name+'"');
+  cur.proyecto=name;cur.mod=Date.now();saveContexts();renderCtxSelectors();toast('Proyecto renombrado a "'+name+'"');
 };
 document.getElementById('ctxEmpresaDel').onclick=()=>{
   const cur=activeContext(),name=cur.empresa;
@@ -1136,6 +1136,8 @@ document.getElementById('ctxEmpresaDel').onclick=()=>{
   if(group.length===contexts.length){alert('No podés eliminar la única empresa cargada.');return}
   if(!confirm(`Eliminar la empresa "${name}" y sus ${group.length} proyecto(s)?\n\nSe borran también todos los días y movimientos cargados (ARS y USD) de esos proyectos. Esta acción no se puede deshacer.`))return;
   const ids=new Set(group.map(c=>c.id));
+  group.forEach(c=>_tombContext(c.id));
+  loans.forEach(l=>{if(ids.has(l.from.id)||ids.has(l.to.id))_tombLoan(l.id)});
   contexts=contexts.filter(c=>!ids.has(c.id));
   group.forEach(c=>removeContextStorage(c.id));
   loans=loans.filter(l=>!ids.has(l.from.id)&&!ids.has(l.to.id));saveLoans();
@@ -1147,6 +1149,8 @@ document.getElementById('ctxProyectoDel').onclick=()=>{
   const cur=activeContext();
   if(contexts.length<=1){alert('No podés eliminar el único proyecto cargado.');return}
   if(!confirm(`Eliminar el proyecto "${cur.proyecto}" (${cur.empresa})?\n\nSe borran también todos los días y movimientos cargados (ARS y USD). Esta acción no se puede deshacer.`))return;
+  _tombContext(cur.id);
+  loans.forEach(l=>{if(l.from.id===cur.id||l.to.id===cur.id)_tombLoan(l.id)});
   contexts=contexts.filter(c=>c.id!==cur.id);
   removeContextStorage(cur.id);
   loans=loans.filter(l=>l.from.id!==cur.id&&l.to.id!==cur.id);saveLoans();
@@ -1953,6 +1957,24 @@ const LOANS_KEY='caja_loans_v1';
 function loadLoans(){try{const r=localStorage.getItem(LOANS_KEY);return r?JSON.parse(r):[]}catch(e){return []}}
 function saveLoans(){try{localStorage.setItem(LOANS_KEY,JSON.stringify(loans))}catch(e){}}
 let loans=loadLoans();
+/* ── Lápidas de borrado de préstamos/contextos (P1) ────────────────────────
+   fusionarCajas une contexts y loans por id: si un dispositivo borra uno y otro
+   (o la nube) todavía lo tiene, la unión lo revive. Estos mapas id→timestamp
+   registran los borrados para que la fusión los descarte, igual que la lápida
+   `empty` de los días. Viajan dentro de cloudPayload y se fusionan por-máximo.
+   - Préstamos: el id es único y nunca se reusa → lápida absoluta.
+   - Contextos: el id sale del nombre (slug), así que un proyecto re-creado con el
+     mismo nombre reusa id; por eso el contexto lleva `mod` (sello de creación) y
+     la lápida sólo lo mata si el borrado es POSTERIOR (delC[id] >= c.mod). */
+const DELCTX_KEY='caja_del_contexts_v1',DELLOAN_KEY='caja_del_loans_v1';
+function loadDelMap(k){try{const r=localStorage.getItem(k),o=r?JSON.parse(r):null;return (o&&typeof o==='object')?o:{}}catch(e){return {}}}
+let delContexts=loadDelMap(DELCTX_KEY),delLoans=loadDelMap(DELLOAN_KEY);
+function saveDelMaps(){try{localStorage.setItem(DELCTX_KEY,JSON.stringify(delContexts));localStorage.setItem(DELLOAN_KEY,JSON.stringify(delLoans))}catch(e){}}
+function _tombContext(id){if(id){delContexts[id]=Date.now();saveDelMaps()}}
+function _tombLoan(id){if(id){delLoans[id]=Date.now();saveDelMaps()}}
+function _mergeDelMap(dst,src){if(src&&typeof src==='object')Object.keys(src).forEach(function(id){const t=+src[id]||0;if(t>(dst[id]||0))dst[id]=t});return dst}
+function _vivoTrasLapida(item,delMap){if(!item||!item.id)return false;const d=delMap[item.id];return !(d!=null&&d>=(item.mod||0))}
+
 function ctxLabel(c){return c.empresa+' / '+c.proyecto}
 function loadUserDaysFor(ctxId,cur){try{const r=localStorage.getItem('caja_user_days_v2::'+ctxId+'::'+cur);return r?JSON.parse(r):[]}catch(e){return []}}
 function saveUserDaysFor(ctxId,cur,arr){try{const k='caja_user_days_v2::'+ctxId+'::'+cur;_sellarCambios(k,arr);localStorage.setItem(k,JSON.stringify(arr))}catch(e){}}
@@ -2281,7 +2303,7 @@ function deleteLoan(id){
   const loan=loans.find(l=>l.id===id);if(!loan)return;
   if(!confirm('¿Eliminar este préstamo?\n\nSe van a quitar los movimientos de ingreso/egreso que generó en ambas cajas ('+ctxLabel(loan.from)+' y '+ctxLabel(loan.to)+').\n\nEsta acción no se puede deshacer.'))return;
   removeLoanMovements(loan);
-  loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();renderAll();toast('Préstamo eliminado');
+  _tombLoan(id);loans=loans.filter(l=>l.id!==id);saveLoans();renderLoans();renderAll();toast('Préstamo eliminado');
 }
 let editingLoanId=null;
 function editLoan(id){
@@ -2417,7 +2439,7 @@ document.getElementById('loanSubmit').onclick=()=>{
   const fromCtx=contexts.find(c=>c.id===fromId),toCtx=contexts.find(c=>c.id===toId);
   if(editingLoanId){
     const oldLoan=loans.find(l=>l.id===editingLoanId);
-    if(oldLoan){removeLoanMovements(oldLoan);loans=loans.filter(l=>l.id!==editingLoanId)}
+    if(oldLoan){removeLoanMovements(oldLoan);_tombLoan(editingLoanId);loans=loans.filter(l=>l.id!==editingLoanId)}
     cancelEditLoan();
     registerLoan(fromCtx,toCtx,cur,amt,note,iso);
     document.getElementById('loanAmt').value='';document.getElementById('loanNote').value='';
@@ -3296,14 +3318,16 @@ function initFirebase(){
 
 function cloudPayload(){
   const raw=fullBackupPayload();
-  return {...raw,updatedBy:deviceId(),updatedAt:Date.now()};
+  return {...raw,delContexts,delLoans,updatedBy:deviceId(),updatedAt:Date.now()};
 }
 function applyRemote(d){
   _applyingRemote=true;
   try{
-    if(Array.isArray(d.contexts))localStorage.setItem('caja_contexts_v1',JSON.stringify(d.contexts));
+    // Absorber las lápidas remotas SIN perder las locales pendientes (fusión por-máximo).
+    _mergeDelMap(delContexts,d.delContexts);_mergeDelMap(delLoans,d.delLoans);saveDelMaps();
+    if(Array.isArray(d.contexts)){const cc=d.contexts.filter(c=>_vivoTrasLapida(c,delContexts));localStorage.setItem('caja_contexts_v1',JSON.stringify(cc.length?cc:d.contexts))}
     if(d.data&&typeof d.data==='object')Object.keys(d.data).forEach(id=>['ARS','USD'].forEach(cur=>{const arr=(d.data[id]||{})[cur];if(Array.isArray(arr))localStorage.setItem('caja_user_days_v2::'+id+'::'+cur,JSON.stringify(arr))}));
-    if(Array.isArray(d.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(d.loans));
+    if(Array.isArray(d.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(d.loans.filter(l=>_vivoTrasLapida(l,delLoans))));
   }catch(e){}
   try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();renderCtxSelectors();renderAll();}catch(e){}
   _applyingRemote=false;
@@ -3362,10 +3386,16 @@ function _elegirDia(a,b){
 function fusionarCajas(local,remoto){
   local=local||{};remoto=remoto||{};
   const out={contexts:[],data:{},loans:[]};
+  // Lápidas: se quedan con el borrado MÁS NUEVO por id y viajan en el paquete.
+  const delC=_mergeDelMap(_mergeDelMap({},local.delContexts),remoto.delContexts);
+  const delL=_mergeDelMap(_mergeDelMap({},local.delLoans),remoto.delLoans);
+  out.delContexts=delC;out.delLoans=delL;
   const ctx={};
+  const _pick=(a,b)=>!a?b:!b?a:((b.mod||0)>=(a.mod||0)?b:a); // ante conflicto de contexto, gana el mod más nuevo (rename/re-alta)
   (local.contexts||[]).forEach(c=>{if(c&&c.id)ctx[c.id]=c});
-  (remoto.contexts||[]).forEach(c=>{if(c&&c.id)ctx[c.id]=c});
-  out.contexts=Object.keys(ctx).map(k=>ctx[k]);
+  (remoto.contexts||[]).forEach(c=>{if(c&&c.id)ctx[c.id]=_pick(ctx[c.id],c)});
+  out.contexts=Object.keys(ctx).map(k=>ctx[k]).filter(c=>_vivoTrasLapida(c,delC));
+  if(!out.contexts.length)out.contexts=Object.keys(ctx).map(k=>ctx[k]); // nunca dejar la caja sin ningún contexto
   const ids={};
   Object.keys(local.data||{}).forEach(k=>ids[k]=1);
   Object.keys(remoto.data||{}).forEach(k=>ids[k]=1);
@@ -3385,7 +3415,7 @@ function fusionarCajas(local,remoto){
   const pr={};
   (local.loans||[]).forEach(l=>{if(l&&l.id)pr[l.id]=l});
   (remoto.loans||[]).forEach(l=>{if(l&&l.id)pr[l.id]=l});
-  out.loans=Object.keys(pr).map(k=>pr[k]);
+  out.loans=Object.keys(pr).map(k=>pr[k]).filter(l=>_vivoTrasLapida(l,delL));
   return out;
 }
 /* ¿Cambió algo respecto de lo que hay en la nube? Sólo comparamos lo que importa
