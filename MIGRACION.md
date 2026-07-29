@@ -44,14 +44,14 @@ empresas/proyectos (o dejar "Todas") → **⤓ Exportar**. Baja un
   "date": "22/07/2026",
   "wd": "Miércoles",
   "y": 2026, "m": 7, "d": 22,
-  "si": 100000,
-  "ing": 50000,
-  "egr": -20000,
+  "si": 130000,
+  "ing": 0,
+  "egr": -5000,
   "sf": 130000,
-  "nmov": 3,
-  "movs": [ { "imp": 50000, "cpt": "Venta mostrador", "ref": "" } ],
+  "nmov": 1,
+  "movs": [ { "imp": -5000, "cpt": "Fiado a Franco", "ref": "" } ],
   "fis": 125000,
-  "caja": [ 100000, 30000, -5000 ],
+  "caja": [ 125000 ],
   "chq": "",
   "credSi": 0,
   "credAdj": 5000,
@@ -66,7 +66,7 @@ empresas/proyectos (o dejar "Todas") → **⤓ Exportar**. Baja un
 |---|---|
 | `iso` | **La clave del día.** Formato `AAAA-MM-DD`. Único por caja. |
 | `date`, `wd`, `y`/`m`/`d` | Derivados de `iso` (fecha formateada, día de la semana, partes). Redundantes: se pueden recalcular. |
-| `si` / `sf` | Saldo inicial / saldo final **según los movimientos**. |
+| `si` / `sf` | Saldo inicial / saldo final. **`sf` incluye los créditos a cobrar del día** (`si + ing + egr + credAdj`): al fiar, el efectivo baja pero el crédito lo compensa, así el saldo total no cae. Ver sección 3. |
 | `ing` / `egr` | Suma de ingresos y de egresos del día. **`egr` es negativo o cero.** |
 | `movs` | Los asientos del día. Ver abajo. |
 | `nmov` | `movs.length`. Redundante. |
@@ -99,38 +99,36 @@ empresas/proyectos (o dejar "Todas") → **⤓ Exportar**. Baja un
 
 ## 3. Las tres cifras que no son lo mismo
 
-Esto es lo que más confunde al migrar. Un día tiene **tres** nociones de plata:
+Un día tiene **tres** nociones de plata:
 
-1. **`sf`** — lo que *debería* haber según los movimientos (`si + ing + egr`).
-2. **`fis`** — lo que *hay* físicamente, contado a mano.
-3. **`cred`** — lo que está prestado/fiado y todavía no se cobró.
+1. **`sf`** — el saldo final **total** al cierre: `si + ing + egr + credAdj`. Incluye los
+   créditos a cobrar del día. `si` arrastra el `sf` del día anterior, así que en los
+   hechos `sf` es *efectivo acumulado + créditos acumulados*.
+2. **`fis`** — el **efectivo** contado a mano (solo la plata física, sin créditos). `null`
+   si no se hizo arqueo.
+3. **`cred`** — los créditos a cobrar acumulados al cierre (lo fiado y todavía no cobrado).
 
-### ⚠️ El `dif` del archivo y lo que muestra la pantalla no usan la misma fórmula
+Para obtener el **efectivo puro** de un día: `efectivo = sf − cred`.
 
-Lo que **guarda** el archivo (`app.html`, donde se arma el día):
+### La diferencia de caja
+
+Lo que guarda el archivo y lo que muestra la pantalla usan **la misma fórmula** (antes no
+era así; se unificó junto con que `sf` pasara a incluir los créditos):
 
 ```js
-d.dif = d.fis != null ? Math.round((d.sf - d.fis)*100)/100 : null;   // dif = sf − fis
+d.dif = d.fis != null ? Math.round((d.sf - (d.fis + d.cred))*100)/100 : null;
 ```
 
-Lo que la pantalla muestra al lado, como "Caja real", en el Resumen y en el cartel de
-alarma:
-
-```js
-realCaja = Math.round(((d.fis||0) + (d.cred||0))*100)/100;           // fis + cred
-```
-
-O sea: el número guardado **no incluye los créditos**, pero el "Caja real" que aparece
-justo al lado **sí**. Mientras `cred` sea 0 los dos coinciden y no se nota; en cuanto hay
-un crédito pendiente en un día con arqueo, las tres cifras de la tarjeta (Según sistema /
-Caja real / Diferencia) dejan de cerrar entre sí.
+Como `sf = efectivo + cred` y se compara contra `fis + cred`, el `cred` se cancela de los
+dos lados y el `dif` termina siendo **efectivo esperado − efectivo contado**: mide solo el
+descuadre de la plata física, sin penalizar por tener créditos pendientes. En pantalla,
+"Según sistema" (`sf`), "Caja real" (`fis + cred`) y la "Diferencia" cierran entre sí.
 
 Si `fis` es `null` (no se hizo arqueo), `dif` es `null` — no es cero, es "no se sabe".
 
-> **Al migrar: no importes el `dif` del archivo.** Mapeá `sf`, `fis` y `cred` por separado
-> y recalculá la diferencia con la fórmula que el sistema destino considere correcta.
-> Decidí explícitamente si los créditos a cobrar cuentan como efectivo para el arqueo
-> (`sf − (fis + cred)`) o no (`sf − fis`): son criterios distintos y dan números distintos.
+> **Al migrar:** `sf` ya viene con los créditos sumados. Si el sistema destino separa
+> efectivo de créditos, usá `efectivo = sf − cred`. El `dif` guardado ya es el descuadre
+> del efectivo (`sf − (fis + cred)`); podés reusarlo o recalcularlo con esa misma fórmula.
 
 ### 3 bis. `mod`: cuál versión de un día gana
 
