@@ -3698,6 +3698,21 @@ document.getElementById('notifBtn').onclick=openNotifSettings;
 renderCtxSelectors();
 renderAll();
 if(!storageOK)setTimeout(()=>toast('Aviso: este entorno no guarda cambios al recargar. Descargá el archivo y abrilo localmente para conservarlos.'),400);
+
+/* Última red de seguridad contra la pérdida de datos en máquinas donde el
+   navegador borra el almacenamiento al cerrar (típico en computadoras de
+   oficina) Y la nube no está disponible (firewall que bloquea Firebase, sin
+   sesión, o sin red). Si al cerrar hay cambios que NO llegaron a la nube y la
+   nube dio error, el navegador pregunta si querés salir — así no perdés una
+   jornada sin enterarte. En una máquina normal con sincronización andando esto
+   NO molesta: _nubeError está vacío y el aviso no aparece. */
+window.addEventListener('beforeunload',function(e){
+  if(_pushPendiente && _nubeError){
+    e.preventDefault();
+    e.returnValue = 'Tenés cambios que todavía no se guardaron en la nube. Si cerrás ahora, podrías perderlos.';
+    return e.returnValue;
+  }
+});
 setTimeout(maybeAutoBackup,1500);
 // Ya no hay configuración que preparar: la caja usa el Firebase de Mess y la
 // sesión del usuario. Si hay sesión, conecta sola; si no, espera al botón.
