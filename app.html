@@ -3865,5 +3865,140 @@ function cambiarPin(){
 })();
 
 </script>
+
+<script>
+/* ============ Hoja de cálculo flotante (calculadora tipo cinta) ============
+   Auxiliar para sumar importes, contar efectivo, calcular vueltos, etc. sin
+   salir de la caja. Una cuenta por línea; total en vivo. Es 100% LOCAL: no
+   toca los datos de la caja ni la nube, solo guarda su propio contenido,
+   posición y estado en localStorage. Autocontenida a propósito (un solo
+   bloque, no engancha con el resto del código) para no arriesgar nada. */
+(function(){
+  var LS='caja_calc_v1';
+  var state={lines:[''],open:false,x:null,y:null};
+  try{var raw=localStorage.getItem(LS);if(raw){var p=JSON.parse(raw);if(p&&typeof p==='object'){state.lines=(Array.isArray(p.lines)&&p.lines.length)?p.lines.map(String):[''];state.open=!!p.open;state.x=(typeof p.x==='number')?p.x:null;state.y=(typeof p.y==='number')?p.y:null;}}}catch(e){}
+  function save(){try{localStorage.setItem(LS,JSON.stringify(state))}catch(e){}}
+
+  var css=
+   '.mcalc-fab{position:fixed;right:18px;bottom:18px;width:52px;height:52px;border-radius:16px;border:1px solid var(--line2);background:linear-gradient(135deg,var(--gold),var(--gold2));color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:350;box-shadow:var(--shadow);transition:transform .15s,filter .15s}'+
+   '.mcalc-fab:hover{filter:brightness(1.08);transform:translateY(-1px)}.mcalc-fab:active{transform:translateY(0)}'+
+   '.mcalc-panel{position:fixed;width:300px;max-width:92vw;background:var(--panel);border:1px solid var(--line2);border-radius:16px;z-index:360;box-shadow:0 18px 50px -12px rgba(0,0,0,.5);display:none;flex-direction:column;overflow:hidden}'+
+   '.mcalc-panel.on{display:flex}'+
+   '.mcalc-head{display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--panel2);border-bottom:1px solid var(--line);cursor:grab;user-select:none;touch-action:none}'+
+   '.mcalc-head.drag{cursor:grabbing}'+
+   '.mcalc-head b{font-size:13.5px;color:var(--ink);font-weight:700;flex:1;display:flex;align-items:center;gap:7px}'+
+   '.mcalc-x{background:none;border:none;color:var(--ink3);cursor:pointer;font-size:17px;line-height:1;padding:2px 5px;border-radius:6px}'+
+   '.mcalc-x:hover{background:var(--line);color:var(--ink)}'+
+   '.mcalc-hint{font-size:11px;color:var(--ink3);padding:8px 12px 2px;line-height:1.4}'+
+   '.mcalc-body{padding:8px 12px 4px;max-height:50vh;overflow:auto}'+
+   '.mcalc-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}'+
+   '.mcalc-row input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:var(--mono,monospace)}'+
+   '.mcalc-row input:focus{outline:none;border-color:var(--gold2);background:var(--bg2)}'+
+   '.mcalc-res{min-width:88px;text-align:right;font-family:var(--mono,monospace);font-size:13px;color:var(--ink2);white-space:nowrap}'+
+   '.mcalc-res.err{color:var(--red)}'+
+   '.mcalc-foot{border-top:1px solid var(--line);padding:11px 12px;display:flex;align-items:center;gap:9px;background:var(--panel2)}'+
+   '.mcalc-total{flex:1;min-width:0}'+
+   '.mcalc-total .lab{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);font-weight:700}'+
+   '.mcalc-total .num{font-family:var(--mono,monospace);font-size:20px;font-weight:700;color:var(--gold2);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+   '.mcalc-foot button{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0}'+
+   '.mcalc-foot button:hover{border-color:var(--line2);color:var(--ink)}'+
+   '@media(max-width:520px){.mcalc-panel.on{left:4vw!important;right:4vw!important;width:auto!important;bottom:84px!important;top:auto!important}}';
+  var st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+
+  var fabSvg='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8.01" y2="10"/><line x1="12" y1="10" x2="12.01" y2="10"/><line x1="16" y1="10" x2="16.01" y2="10"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/></svg>';
+  var headSvg='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/></svg>';
+
+  var fab=document.createElement('button');fab.type='button';fab.className='mcalc-fab';fab.title='Hoja de cálculo';fab.setAttribute('aria-label','Hoja de cálculo');fab.innerHTML=fabSvg;
+  var panel=document.createElement('div');panel.className='mcalc-panel';
+  panel.innerHTML=
+    '<div class="mcalc-head"><b>'+headSvg+'Hoja de cálculo</b><button type="button" class="mcalc-x" title="Cerrar">✕</button></div>'+
+    '<div class="mcalc-hint">Una cuenta por línea (ej. <b>100*5</b>, <b>2500+300</b>, <b>1500-vuelto</b>). Enter = línea nueva. Decimales con punto.</div>'+
+    '<div class="mcalc-body"><div class="mcalc-rows"></div></div>'+
+    '<div class="mcalc-foot"><div class="mcalc-total"><div class="lab">Total</div><div class="num">0</div></div><button type="button" class="mcalc-copy" title="Copiar el total">Copiar</button><button type="button" class="mcalc-clear" title="Borrar todo">Limpiar</button></div>';
+  document.body.appendChild(fab);document.body.appendChild(panel);
+
+  var rowsEl=panel.querySelector('.mcalc-rows');
+  var numFmt=(function(){try{return new Intl.NumberFormat('es-AR',{minimumFractionDigits:0,maximumFractionDigits:2})}catch(e){return null}})();
+  function fmt(n){if(n==null||isNaN(n))return '—';return numFmt?numFmt.format(n):(Math.round(n*100)/100).toString();}
+
+  // Evalúa una línea como aritmética simple. Solo se permiten dígitos y
+  // operadores (se sanitiza antes), así que no hay forma de inyectar código.
+  function evalLine(rawIn){
+    if(rawIn==null)return null;
+    var s=String(rawIn).trim();
+    if(!s)return null;
+    s=s.replace(/[×xX]/g,'*').replace(/[÷]/g,'/').replace(/,/g,'.').replace(/\s+/g,'');
+    s=s.replace(/([0-9.]+)%/g,'($1/100)'); // "21%" -> (21/100)
+    if(!/^[0-9.+\-*/()]+$/.test(s))return NaN;
+    try{var v=Function('"use strict";return('+s+')')();return (typeof v==='number'&&isFinite(v))?v:NaN;}catch(e){return NaN;}
+  }
+  function total(){var t=0;for(var i=0;i<state.lines.length;i++){var v=evalLine(state.lines[i]);if(v!=null&&!isNaN(v))t+=v;}return Math.round(t*100)/100;}
+  function ensureTrailingEmpty(){if(!state.lines.length||String(state.lines[state.lines.length-1]).trim()!=='')state.lines.push('');}
+
+  function build(focusI,caret){
+    ensureTrailingEmpty();
+    rowsEl.innerHTML='';
+    state.lines.forEach(function(ln,i){
+      var row=document.createElement('div');row.className='mcalc-row';
+      var inp=document.createElement('input');inp.type='text';inp.setAttribute('inputmode','decimal');inp.setAttribute('autocomplete','off');inp.setAttribute('data-i',i);inp.value=ln;if(i===0&&state.lines.length===1)inp.placeholder='0';
+      var res=document.createElement('span');res.className='mcalc-res';
+      row.appendChild(inp);row.appendChild(res);rowsEl.appendChild(row);
+      inp.addEventListener('input',function(){var c=inp.selectionStart;state.lines[i]=inp.value;var wasLast=(i===state.lines.length-1);save();if(wasLast&&inp.value.trim()!==''){build(i,c);}else{paint();}});
+      inp.addEventListener('keydown',function(e){onKey(e,i,inp);});
+    });
+    paint();
+    if(focusI!=null){var el=rowsEl.querySelector('input[data-i="'+focusI+'"]');if(el){el.focus();var pos=(caret==null?el.value.length:caret);try{el.setSelectionRange(pos,pos);}catch(_){}}}
+  }
+  // Actualiza solo resultados + total, sin reconstruir (no pierde el foco).
+  function paint(){
+    var rows=rowsEl.querySelectorAll('.mcalc-row');
+    for(var k=0;k<rows.length;k++){
+      var inp=rows[k].querySelector('input'),res=rows[k].querySelector('.mcalc-res');
+      var i=+inp.getAttribute('data-i'),ln=state.lines[i]!=null?state.lines[i]:'';
+      var v=evalLine(ln);
+      if(String(ln).trim()===''){res.textContent='';res.className='mcalc-res';}
+      else if(isNaN(v)){res.textContent='?';res.className='mcalc-res err';}
+      else{res.textContent=fmt(v);res.className='mcalc-res';}
+    }
+    var t=total();panel._total=t;panel.querySelector('.mcalc-total .num').textContent=fmt(t);
+  }
+  function onKey(e,i,inp){
+    if(e.key==='Enter'){e.preventDefault();state.lines.splice(i+1,0,'');save();build(i+1,0);}
+    else if(e.key==='Backspace'&&inp.value===''&&state.lines.length>1){e.preventDefault();state.lines.splice(i,1);save();build(Math.max(0,i-1),null);}
+    else if(e.key==='ArrowDown'){var n=rowsEl.querySelector('input[data-i="'+(i+1)+'"]');if(n){e.preventDefault();n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(_){}}}
+    else if(e.key==='ArrowUp'){var pr=rowsEl.querySelector('input[data-i="'+(i-1)+'"]');if(pr){e.preventDefault();pr.focus();try{pr.setSelectionRange(pr.value.length,pr.value.length)}catch(_){}}}
+    else if(e.key==='Escape'){e.stopPropagation();closeC();}
+  }
+
+  function place(){
+    if(state.x!=null&&state.y!=null){
+      var x=Math.max(6,Math.min(state.x,window.innerWidth-panel.offsetWidth-6));
+      var y=Math.max(6,Math.min(state.y,window.innerHeight-44));
+      panel.style.left=x+'px';panel.style.top=y+'px';panel.style.right='auto';panel.style.bottom='auto';
+    }else{panel.style.right='18px';panel.style.bottom='84px';panel.style.left='auto';panel.style.top='auto';}
+  }
+  function openC(){state.open=true;panel.classList.add('on');place();save();var f=rowsEl.querySelector('input');if(f)f.focus();}
+  function closeC(){state.open=false;panel.classList.remove('on');save();}
+  fab.addEventListener('click',function(){state.open?closeC():openC();});
+  panel.querySelector('.mcalc-x').addEventListener('click',closeC);
+  panel.querySelector('.mcalc-clear').addEventListener('click',function(){state.lines=[''];save();build(0,0);});
+  panel.querySelector('.mcalc-copy').addEventListener('click',function(){
+    var t=panel._total||0;var txt=String(t);
+    var done=function(){if(typeof toast==='function')toast('Total copiado: '+fmt(t));};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,done);}
+    else{try{var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();}catch(_){}}
+  });
+
+  // Arrastre por el encabezado.
+  var head=panel.querySelector('.mcalc-head'),drag=null;
+  head.addEventListener('pointerdown',function(e){if(e.target.closest('.mcalc-x'))return;var r=panel.getBoundingClientRect();drag={dx:e.clientX-r.left,dy:e.clientY-r.top};head.classList.add('drag');try{head.setPointerCapture(e.pointerId)}catch(_){}});
+  head.addEventListener('pointermove',function(e){if(!drag)return;var x=e.clientX-drag.dx,y=e.clientY-drag.dy;x=Math.max(6,Math.min(x,window.innerWidth-panel.offsetWidth-6));y=Math.max(6,Math.min(y,window.innerHeight-44));panel.style.left=x+'px';panel.style.top=y+'px';panel.style.right='auto';panel.style.bottom='auto';state.x=x;state.y=y;});
+  function endDrag(){if(drag){drag=null;head.classList.remove('drag');save();}}
+  head.addEventListener('pointerup',endDrag);head.addEventListener('pointercancel',endDrag);
+
+  build(null,null);
+  if(state.open)openC();
+})();
+</script>
 </body>
 </html>
