@@ -1488,7 +1488,7 @@ function renderIndex(){
     const rows=ds.slice().reverse().map(d=>`<tr onclick='openDayIso("${d.iso}")'>
         <td class="l"><span class="daynum">${d.d}</span><span class="wdtag">${d.wd}</span></td>
         <td>${peso(d.si)}</td><td class="pos">${d.ing?peso(d.ing):'—'}</td><td class="neg">${d.egr?pesoS(d.egr):'—'}</td>
-        <td style="color:var(--gold2);font-weight:600">${peso(d.sf)}</td><td>${d.nmov||'—'}</td><td class="l">${badge(d)}</td>
+        <td style="color:var(--gold2);font-weight:600">${peso(d.sf)}</td><td>${d.dif==null?'<span style="color:var(--ink3)">—</span>':'<span style="color:'+(isWarn(d)?'var(--red)':'var(--green)')+'">'+pesoS(d.dif)+'</span>'}</td><td>${d.nmov||'—'}</td><td class="l">${badge(d)}</td>
         <td class="rowacts" onclick="event.stopPropagation()">${d.src==='user'?`<button class="rowact" title="Editar día" onclick="editDay('${d.iso}')">✎</button><button class="rowact del" title="Eliminar día" onclick="deleteDay('${d.iso}')">${ic('trash',14)}</button>`:''}</td></tr>`).join('');
     cont.insertAdjacentHTML('beforeend',`<div class="month">
         <div class="mhead ${isOpen?'open':''}" data-key="${m.key}" onclick="toggleM(this)">
@@ -1497,7 +1497,7 @@ function renderIndex(){
           <div class="mstats"><div><b>Ingresos</b><span class="pos">${peso(mIng)}</span></div><div><b>Egresos</b><span class="neg">${pesoS(mEgr)}</span></div><div><b>Cierre</b><span style="color:var(--gold2)">${peso(ds[ds.length-1].sf)}</span></div></div>
         </div>
         <div class="mbody" style="max-height:${isOpen?'9999px':'0'}">
-          <div style="overflow-x:auto"><table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Mov.</th><th class="l">Estado</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div style="overflow-x:auto"><table><thead><tr><th class="l">Día</th><th>Saldo inicial</th><th>Ingresos</th><th>Egresos</th><th>Saldo final</th><th>Diferencia</th><th>Mov.</th><th class="l">Estado</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div>
         </div></div>`);
   });
   if(!shown)cont.innerHTML='<div class="empty-state"><div class="big">⌕</div>Sin resultados para los filtros aplicados</div>';
