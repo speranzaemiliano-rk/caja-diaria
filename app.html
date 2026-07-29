@@ -1530,7 +1530,7 @@ function openDay(d){
       </table></div>
       <div class="ctrl" style="grid-template-columns:1fr">
         <div class="ctrlbox"><h4>✓ Control de caja</h4>
-          <div class="crow"><span>Saldo según movimientos</span><span>${peso(d.sf)}</span></div>
+          <div class="crow"><span>Saldo del sistema (con créditos)</span><span>${peso(d.sf)}</span></div>
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Créditos a cobrar <button type="button" onclick="openCreditDetail()" style="margin-left:8px;background:none;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;vertical-align:1px" title="Ver quién forma este saldo (pide clave)">${ic('lock',11)} Ver</button></span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
@@ -1976,7 +1976,12 @@ function cascadeChain(ctxId,cur,ud){
       const credAdj=d.credAdj!=null?d.credAdj:(d.cred!=null?d.cred:0);
       const newCredSi=prevCred,newCred=Math.round((prevCred+credAdj)*100)/100;
       const newSi=prevSf!=null?prevSf:d.si;
-      const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0))*100)/100;
+      // El saldo final incluye el crédito del día: el efectivo baja (egr) pero el
+      // crédito a cobrar lo compensa, así el saldo TOTAL no cae al fiar. newSi ya
+      // arrastra el crédito acumulado de días previos (prevSf lo incluye), así que
+      // sf = efectivo acumulado + créditos acumulados. La diferencia de caja (newDif)
+      // queda entonces como efectivo esperado − contado, sin penalizar por el crédito.
+      const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0)+credAdj)*100)/100;
       // Diferencia de caja: compara lo esperado según movimientos contra lo
       // contado (caja física + créditos a cobrar, que cuentan como efectivo).
       const newDif=d.fis!=null?Math.round((newSf-((d.fis||0)+newCred))*100)/100:null;
@@ -2624,7 +2629,14 @@ function computeEditor(){
     movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim()});
   });
   const sf=Math.round((si+ing+egr)*100)/100;
-  return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs};
+  // Neto de créditos a cobrar cargados ese día. Los créditos cuentan como parte
+  // del saldo: al fiar, la plata sale como EGRESO (el efectivo baja) pero el saldo
+  // TOTAL no baja, porque el crédito a cobrar lo compensa. c.sf sigue siendo el
+  // efectivo (para quien lo necesite); credAdj se suma aparte donde se muestra el
+  // saldo total (preview y cascadeChain).
+  const _cm=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return Math.round((cm.type==='out'?-1:1)*a*100)/100;}).filter(v=>v!=null);
+  const credAdj=Math.round(_cm.reduce((s,v)=>s+v,0)*100)/100;
+  return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs,credAdj};
 }
 function renderCredMovRows(){
   const list=document.getElementById('credMvList');if(!list)return;
@@ -2715,7 +2727,10 @@ function recalcEditor(){
   });
   const ing=Math.round((c.ing+fxIng)*100)/100;
   const egr=Math.round((c.egr-loanTot-fxEgr)*100)/100;
-  const sf=Math.round((c.sf-loanTot+fxIng-fxEgr)*100)/100;
+  // El saldo final del preview incluye el neto de créditos del día (c.credAdj): al
+  // fiar, el efectivo baja como egreso pero el crédito a cobrar lo compensa, así el
+  // saldo TOTAL no cae. Mismo criterio que cascadeChain() al guardar.
+  const sf=Math.round((c.sf-loanTot+fxIng-fxEgr+(c.credAdj||0))*100)/100;
   document.getElementById('s_in').textContent=peso(ing);
   document.getElementById('s_out').textContent=pesoS(egr);
   const net=Math.round((ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
@@ -2782,7 +2797,18 @@ function saveDay(){
 }
 function deleteDay(iso){
   if(!confirm('¿Eliminar este día y todos sus movimientos? Esta acción no se puede deshacer.'))return;
-  userDays=userDays.filter(d=>d.iso!==iso);
+  // No alcanza con sacar el día del array: la fusión con la nube une los días de
+  // los dos lados, y como el día seguía existiendo en la nube (o en otro
+  // dispositivo) volvía a aparecer — de ahí "no me deja eliminar un día". En su
+  // lugar dejamos un día VACÍO como lápida: saveUser() le pone un sello `mod`
+  // nuevo, así para la fusión es la versión más reciente y el borrado se propaga a
+  // todos lados en vez de revivir. recompute() filtra los días vacíos, así que no
+  // se ve en ningún lado (lista, gráficos, KPIs) y el saldo encadenado lo saltea.
+  const p=String(iso).split('-'),y=+p[0],mo=+p[1],dd=+p[2];
+  const vacio={src:'user',iso,y,m:mo,d:dd,date:p[2]+'/'+p[1]+'/'+p[0],wd:wdOf(iso),
+    empty:true,movs:[],credMovs:[],fisMovs:[],caja:[],ing:0,egr:0,nmov:0,si:0,sf:0,dif:null,fis:null,chq:null,cred:0,credSi:0,credAdj:0};
+  const idx=userDays.findIndex(d=>d.iso===iso);
+  if(idx>=0)userDays[idx]=vacio;else userDays.push(vacio);
   cascadeChain(activeContextId,CUR,userDays);
   saveUser();closeEditor();closeModal();renderAll();toast('Día eliminado');
 }
