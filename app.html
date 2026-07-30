@@ -2284,20 +2284,51 @@ function registerExchange(ctx,type,usdAmount,arsAmount,note,iso){
 // Quita los 2 movimientos que un préstamo generó (origen y destino), recalculando
 // ese día en cada caja. Se usa para poder editar o eliminar un préstamo sin dejar
 // movimientos huérfanos.
+function _diaRecalcMovs(d){
+  d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.nmov=d.movs.length;
+  d.sf=Math.round((d.si+d.ing+d.egr)*100)/100;
+  d.dif=d.fis!=null?Math.round((d.sf-d.fis)*100)/100:null;
+}
 function removeLoanMovements(loan){
   [loan.from.id,loan.to.id].forEach(ctxId=>{
-    const ud=loadUserDaysFor(ctxId,loan.cur);
-    const d=ud.find(x=>(x.movs||[]).some(m=>m.ref==='PRESTAMO#'+loan.id));
-    if(!d)return;
-    d.movs=d.movs.filter(m=>m.ref!=='PRESTAMO#'+loan.id);
-    d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
-    d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
-    d.nmov=d.movs.length;
-    d.sf=Math.round((d.si+d.ing+d.egr)*100)/100;
-    cascadeChain(ctxId,loan.cur,ud);
-    saveUserDaysFor(ctxId,loan.cur,ud);
-    if(ctxId===activeContextId&&loan.cur===CUR)userDays=ud;
+    const ud=loadUserDaysFor(ctxId,loan.cur);let changed=false;
+    // Barre TODOS los días (antes usaba .find y limpiaba sólo el primero: si el
+    // mismo préstamo dejó movimiento en más de un día quedaban huérfanos).
+    ud.forEach(d=>{
+      if(!d||!Array.isArray(d.movs)||!d.movs.length)return;
+      const keep=d.movs.filter(m=>m.ref!=='PRESTAMO#'+loan.id);
+      if(keep.length!==d.movs.length){d.movs=keep;_diaRecalcMovs(d);changed=true;}
+    });
+    if(changed){cascadeChain(ctxId,loan.cur,ud);saveUserDaysFor(ctxId,loan.cur,ud);if(ctxId===activeContextId&&loan.cur===CUR)userDays=ud;}
   });
+}
+/* Auto-sanado de movimientos de préstamo HUÉRFANOS: un movimiento con ref
+   'PRESTAMO#<id>' cuyo <id> ya no está en loans quedó colgado (préstamo y sus
+   movimientos siempre viajan juntos). Se quita, se recalcula el día y se resella
+   (mod nuevo) para que la limpieza gane la fusión y no vuelva desde la nube.
+   Cubre borrados viejos (anteriores a la lápida) y cualquier resurrección. */
+function _barrerHuerfanosCtx(ctxId,cur){
+  const ud=loadUserDaysFor(ctxId,cur);let changed=false;
+  ud.forEach(d=>{
+    if(!d||!Array.isArray(d.movs)||!d.movs.length)return;
+    const keep=d.movs.filter(m=>{
+      if(m&&m.ref&&m.ref.indexOf('PRESTAMO#')===0){return loans.some(l=>l.id===m.ref.slice(9));}
+      return true;
+    });
+    if(keep.length!==d.movs.length){d.movs=keep;_diaRecalcMovs(d);changed=true;}
+  });
+  if(changed){cascadeChain(ctxId,cur,ud);saveUserDaysFor(ctxId,cur,ud);if(ctxId===activeContextId&&cur===CUR)userDays=ud;}
+  return changed;
+}
+function _barrerPrestamosHuerfanos(){
+  let activo=false;
+  (contexts||[]).forEach(c=>['ARS','USD'].forEach(cur=>{
+    if(_barrerHuerfanosCtx(c.id,cur)&&c.id===activeContextId&&cur===CUR)activo=true;
+  }));
+  if(activo){try{recompute()}catch(e){}}
+  return activo;
 }
 function deleteLoan(id){
   const loan=loans.find(l=>l.id===id);if(!loan)return;
@@ -2425,7 +2456,7 @@ function renderLoanTable(){
   const emptyMsg=loanFilterPair?'Sin movimientos registrados entre este par':'Todavía no registraste préstamos';
   document.getElementById('loanTable').innerHTML=`<thead><tr><th class="l">Fecha</th><th class="l">Origen</th><th class="l">Destino</th><th>Importe</th>${showRunning?'<th>Saldo acumulado</th>':''}<th class="l">Nota</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan=${showRunning?7:6} class=l style="text-align:center;color:var(--ink3);padding:24px">${emptyMsg}</td></tr>`}</tbody>`;
 }
-function renderLoans(){renderLoanSelects();renderLoanSummary();renderLoanBalances();renderLoanTable();renderCtxLoanBadge()}
+function renderLoans(){_barrerPrestamosHuerfanos();renderLoanSelects();renderLoanSummary();renderLoanBalances();renderLoanTable();renderCtxLoanBadge()}
 document.getElementById('loanSubmit').onclick=()=>{
   const errEl=document.getElementById('loanErr');errEl.textContent='';
   const fromId=document.getElementById('loanFrom').value,toId=document.getElementById('loanTo').value;
@@ -3329,7 +3360,7 @@ function applyRemote(d){
     if(d.data&&typeof d.data==='object')Object.keys(d.data).forEach(id=>['ARS','USD'].forEach(cur=>{const arr=(d.data[id]||{})[cur];if(Array.isArray(arr))localStorage.setItem('caja_user_days_v2::'+id+'::'+cur,JSON.stringify(arr))}));
     if(Array.isArray(d.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(d.loans.filter(l=>_vivoTrasLapida(l,delLoans))));
   }catch(e){}
-  try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();renderCtxSelectors();renderAll();}catch(e){}
+  try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();_barrerPrestamosHuerfanos();renderCtxSelectors();renderAll();}catch(e){}
   _applyingRemote=false;
 }
 
