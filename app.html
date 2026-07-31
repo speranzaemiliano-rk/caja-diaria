@@ -1318,6 +1318,24 @@ function updateDaySelBar(){
   bar.innerHTML=`<span>${daySelSet.size} seleccionado(s)</span><span>Suma neta: <b class="${sum>=0?'pos':'neg'}">${pesoS(sum)}</b></span><button type="button" class="clr" id="daySelClear">Limpiar selección</button>`;
   const cb=document.getElementById('daySelClear');if(cb)cb.onclick=()=>{daySelSet=new Set();renderDayMovs()};
 }
+// Filas extra del pie de la tabla de movimientos cuando el día tiene créditos.
+// Desde v82 el saldo final es `si + ing + egr + credAdj` (fiar no baja el saldo:
+// sale efectivo pero entra un crédito a cobrar que lo compensa). El problema es
+// que ese `+ credAdj` no se mostraba en ningún lado, así que las 4 tarjetas
+// (Saldo inicial / Ingresos / Egresos / Saldo final) NO cerraban entre sí y se
+// leía como "la caja no me resta los gastos" — bug real reportado con un día
+// donde 27.090.025 − 205.700 daba 27.044.725 en pantalla (160.400 de crédito
+// sumando por atrás, invisibles). Estas dos filas hacen explícito el término que
+// faltaba y la variación final, así la cuenta cierra a la vista.
+function credLineRows(d,neto,extraCols){
+  const cred=Math.round((d.credAdj||0)*100)/100;
+  if(!cred)return '';
+  const pad=extraCols?'<td></td>':'';
+  const padTop=extraCols?'<td style="border-top:1px solid var(--line2)"></td>':'';
+  const varSaldo=Math.round((neto+cred)*100)/100;
+  return `<tr style="cursor:default">${pad}<td style="font-weight:700;color:${cred>=0?'var(--green)':'var(--red)'}">${pesoS(cred)}</td><td class="l" style="color:var(--ink3)">Créditos a cobrar del día <span style="opacity:.7">· ${cred>=0?'fiado: sale efectivo y entra un crédito':'cobro de fiado'}</span></td><td></td></tr>
+    <tr style="cursor:default">${padTop}<td style="font-weight:700;border-top:1px solid var(--line2);color:${varSaldo>=0?'var(--green)':'var(--red)'}">${pesoS(varSaldo)}</td><td class="l" style="border-top:1px solid var(--line2);color:var(--ink2);font-weight:600">Variación del saldo</td><td style="border-top:1px solid var(--line2)"></td></tr>`;
+}
 function renderDayMovs(){
   const d=last;
   const t=document.getElementById('dayPanelTitle'),s=document.getElementById('dayPanelSub'),el=document.getElementById('dayMovs'),eb=document.getElementById('dayEditBtn'),ab=document.getElementById('dayAddBtn'),qa=document.getElementById('dayQuickAdd'),sb=document.getElementById('daySelBtn'),pb=document.getElementById('dayPrintBtn');
@@ -1342,7 +1360,7 @@ function renderDayMovs(){
   el.innerHTML=`<div class="mvs" style="margin:0"><table>
     <thead><tr>${sel?'<th class="selchk"></th>':''}<th>Importe</th><th class="l">Concepto</th><th class="l">Referencia</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr style="cursor:default">${sel?'<td style="border-top:2px solid var(--line2)"></td>':''}<td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>
+    <tfoot><tr style="cursor:default">${sel?'<td style="border-top:2px solid var(--line2)"></td>':''}<td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr>${credLineRows(d,neto,sel?1:0)}</tfoot>
   </table></div>`;
   updateDaySelBar();
 }
@@ -1526,11 +1544,11 @@ function openDay(d){
         <div class="dk"><b>Saldo inicial</b><div class="dv">${peso(d.si)}</div></div>
         <div class="dk"><b>Ingresos</b><div class="dv pos">${peso(d.ing)}</div></div>
         <div class="dk"><b>Egresos</b><div class="dv neg">${pesoS(d.egr)}</div></div>
-        <div class="dk"><b>Saldo final</b><div class="dv" style="color:var(--gold2)">${peso(d.sf)}</div></div></div>
+        <div class="dk"><b>Saldo final</b><div class="dv" style="color:var(--gold2)">${peso(d.sf)}</div>${(d.credAdj||0)!==0?`<div style="font-size:11px;color:var(--ink3);margin-top:3px;line-height:1.3">incluye ${pesoS(d.credAdj)} de créditos del día</div>`:''}</div></div>
       <div class="mvs"><table>
         <thead><tr><th>Importe</th><th class="l">Concepto / Descripción</th><th class="l">Referencia</th></tr></thead>
         <tbody>${movRows}</tbody>
-        ${d.movs.length?`<tfoot><tr style="cursor:default"><td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr></tfoot>`:''}
+        ${d.movs.length?`<tfoot><tr style="cursor:default"><td style="font-weight:700;border-top:2px solid var(--line2);color:${neto>=0?'var(--green)':'var(--red)'}">${pesoS(neto)}</td><td class="l" style="border-top:2px solid var(--line2);color:var(--ink3)">Flujo neto del día</td><td style="border-top:2px solid var(--line2)"></td></tr>${credLineRows(d,neto)}</tfoot>`:''}
       </table></div>
       <div class="ctrl" style="grid-template-columns:1fr">
         <div class="ctrlbox"><h4>✓ Control de caja</h4>
