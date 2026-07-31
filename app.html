@@ -1377,7 +1377,7 @@ function saveQuickMov(iso){
   if(amt==null||amt<=0){err.textContent='Ingresá un importe válido.';return}
   const d=userDays.find(x=>x.iso===iso);
   if(!d){err.textContent='Este día no se puede editar acá.';return}
-  const imp=Math.round((_qaType==='out'?-1:1)*amt*100)/100;
+  const imp=Math.round((_qaType==='out'?-1:1)*Math.abs(amt)*100)/100;
   d.movs.push({imp,cpt,ref:''});
   d.ing=Math.round(d.movs.filter(mv=>mv.imp>0).reduce((s,mv)=>s+mv.imp,0)*100)/100;
   d.egr=Math.round(d.movs.filter(mv=>mv.imp<0).reduce((s,mv)=>s+mv.imp,0)*100)/100;
@@ -2689,14 +2689,49 @@ function renderMovRows(){
     row.querySelector('.rmrow').onclick=()=>{edState.movs.splice(i,1);if(!edState.movs.length)edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   });
 }
-function num(v){if(v===''||v==null)return null;const n=parseFloat((''+v).replace(/[^\d.\-]/g,''));return isNaN(n)?null:n}
+// Parsea un importe tipeado a mano respetando el formato argentino: el punto es
+// separador de MILES y la coma de decimales ("1.500,50" = mil quinientos con
+// cincuenta). Antes hacía parseFloat() sobre la cadena filtrada a [\d.-], así
+// que "1.500" daba 1.5 y "1500,50" daba 150050 — BUG REAL reportado ("la caja
+// resta mal los gastos"): un gasto de $1.500 entraba como $1,50, mil veces más
+// chico. Peor todavía porque la app MUESTRA los importes con punto de miles
+// ($ 1.500), así que tipear exactamente lo que uno ve era el camino directo al
+// error. Se mantiene el signo negativo: hay campos donde es válido (el prompt de
+// editCreditNoteEntry pide "-5000" para dar de baja un crédito).
+function num(v){
+  if(v===''||v==null)return null;
+  let s=(''+v).trim().replace(/[^\d.,\-]/g,'');
+  if(!s)return null;
+  const neg=/^-/.test(s);
+  s=s.replace(/-/g,'');
+  const lastDot=s.lastIndexOf('.'),lastComma=s.lastIndexOf(',');
+  if(lastDot>=0&&lastComma>=0){
+    // Están los dos separadores: el ÚLTIMO en aparecer es el decimal.
+    if(lastComma>lastDot)s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(lastComma>=0){
+    s=s.replace(',','.'); // solo coma => decimal
+  }else if(lastDot>=0){
+    // Solo puntos. Varios => todos miles. Uno solo con exactamente 3 dígitos
+    // atrás ("1.500") => miles, que es como se escribe acá; con cualquier otra
+    // cantidad ("1.5", "1.50") => decimal.
+    const parts=s.split('.');
+    if(parts.length>2||parts[1].length===3)s=parts.join('');
+  }
+  const n=parseFloat(s);
+  return isNaN(n)?null:(neg?-n:n);
+}
 function computeEditor(){
   const si=num(document.getElementById('f_si').value)||0;
   let ing=0,egr=0;const movs=[];
   edState.movs.forEach(mv=>{
     const a=num(mv.amt);if(a==null||a===0)return;
+    // Math.abs: el toggle ＋/− ya dice la dirección, el importe es la magnitud.
+    // Sin esto, tipear "-500" en una fila marcada como EGRESO daba doble
+    // negativo y el gasto entraba como ingreso (otra forma del mismo bug de
+    // "resta mal los gastos"). Mismo criterio en créditos y conteo físico.
     const sign=mv.type==='out'?-1:1;
-    let imp=Math.round(sign*a*100)/100;
+    let imp=Math.round(sign*Math.abs(a)*100)/100;
     if(imp>=0)ing+=imp;else egr+=imp;
     movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim()});
   });
@@ -2706,7 +2741,7 @@ function computeEditor(){
   // TOTAL no baja, porque el crédito a cobrar lo compensa. c.sf sigue siendo el
   // efectivo (para quien lo necesite); credAdj se suma aparte donde se muestra el
   // saldo total (preview y cascadeChain).
-  const _cm=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return Math.round((cm.type==='out'?-1:1)*a*100)/100;}).filter(v=>v!=null);
+  const _cm=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100;}).filter(v=>v!=null);
   const credAdj=Math.round(_cm.reduce((s,v)=>s+v,0)*100)/100;
   return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs,credAdj};
 }
@@ -2762,7 +2797,7 @@ async function unlockCreditRows(){
 }
 function recalcCredit(){
   let sum=0;
-  (edState.credMovs||[]).forEach(cm=>{const a=num(cm.amt);if(a==null)return;sum+=(cm.type==='out'?-1:1)*a});
+  (edState.credMovs||[]).forEach(cm=>{const a=num(cm.amt);if(a==null)return;sum+=(cm.type==='out'?-1:1)*Math.abs(a)});
   const newBal=Math.round((edState.credSi+sum)*100)/100;
   const el=document.getElementById('credNewDisplay');if(el)el.textContent=peso(newBal);
 }
@@ -2782,7 +2817,7 @@ function renderFisMovRows(){
   });
 }
 function recalcFis(){
-  const vals=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:(fm.type==='out'?-1:1)*a}).filter(v=>v!=null);
+  const vals=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:(fm.type==='out'?-1:1)*Math.abs(a)}).filter(v=>v!=null);
   const el=document.getElementById('fisTotalDisplay');if(!el)return;
   el.textContent=vals.length?pesoS(Math.round(vals.reduce((s,v)=>s+v,0)*100)/100):'—';
 }
@@ -2814,10 +2849,10 @@ function saveDay(){
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
-  const cajaParts=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:Math.round((fm.type==='out'?-1:1)*a*100)/100}).filter(v=>v!=null&&v!==0);
+  const cajaParts=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:Math.round((fm.type==='out'?-1:1)*Math.abs(a)*100)/100}).filter(v=>v!=null&&v!==0);
   const fis=cajaParts.length?Math.round(cajaParts.reduce((s,v)=>s+v,0)*100)/100:null;
   const chq=num(document.getElementById('f_chq').value);
-  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*a*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
+  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
   const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
   // Créditos NUEVOS (recién tipeados en esta sesión, no _preexisting) que
   // suman al saldo — "otorgar un crédito" — para el auto-imprimir del vale de
