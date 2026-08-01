@@ -2095,21 +2095,74 @@ function creditNoteEntries(note,hastaIso){
   });
   return out.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
 }
-function editCreditNoteEntry(iso,idx){
-  const d=userDays.find(x=>x.iso===iso);
-  if(!d){toast('Solo podés editar ajustes de días que cargaste vos');return}
-  const cm=(d.credMovs||[])[idx];if(!cm)return;
-  const newNote=prompt('Nombre / concepto:',cm.note||'');
-  if(newNote==null)return;
-  const newAmtStr=prompt('Importe (negativo si es una baja del crédito, ej. -5000):',cm.imp);
-  if(newAmtStr==null)return;
-  const newAmt=num(newAmtStr);
-  if(newAmt==null){toast('Importe inválido');return}
-  cm.note=newNote.trim();
-  cm.imp=Math.round(newAmt*100)/100;
-  d.credAdj=Math.round((d.credMovs||[]).reduce((s,x)=>s+x.imp,0)*100)/100;
+// Ajuste de crédito con fecha de HOY, sin tocar los días anteriores.
+// Pedido explícito del usuario: "si modifico hoy un crédito que ya estaba,
+// ejemplo lo subo o lo bajo, que no modifique los créditos para fechas de
+// atrás". Antes el único camino era el ✎ de cada renglón, que edita el ajuste
+// EN SU FECHA ORIGINAL: como `cred` es un saldo encadenado, tocar un ajuste
+// viejo recalculaba el crédito de ese día y de todos los siguientes, o sea
+// reescribía el pasado. Esto en cambio deja el historial quieto y agrega un
+// ajuste nuevo con fecha de hoy.
+// Además mueve el efectivo en sentido contrario (decisión explícita del
+// usuario): si te pagan, baja el crédito y ENTRA plata; si fiás más, sube el
+// crédito y SALE plata. Como sf = si + ing + egr + credAdj, las dos patas se
+// cancelan y el saldo total no se mueve — que es lo correcto: cambiaste un
+// crédito a cobrar por efectivo, no ganaste ni perdiste.
+function ajustarCreditoHoy(note){
+  const iso=todayIso(),fechaTxt=iso.split('-').reverse().join('/');
+  const nombre=(note||'').trim()||'(sin nombre)';
+  const item=creditNotesBreakdown(activeContextId,CUR).find(x=>((x.note||'').trim()||'(sin nombre)')===nombre);
+  const saldoActual=item?item.total:0;
+  const txt=prompt(
+    'Ajuste de crédito para "'+nombre+'" con fecha de HOY ('+fechaTxt+').\n\n'+
+    'Debe actualmente: '+pesoCur(saldoActual,CUR)+'\n\n'+
+    'Si TE PAGÓ → importe en NEGATIVO (ej. -50000)\n'+
+    'Si le FIASTE más → importe en POSITIVO (ej. 30000)\n\n'+
+    'El efectivo de la caja se ajusta solo, en sentido contrario.\n'+
+    'Los días anteriores no se tocan.','');
+  if(txt==null)return;
+  const delta=num(txt);
+  if(delta==null||delta===0){toast('Importe inválido');return}
+  const cobro=delta<0;
+  const nuevoSaldo=Math.round((saldoActual+delta)*100)/100;
+  if(!confirm(
+    'Ajuste del '+fechaTxt+' para "'+nombre+'":\n\n'+
+    'Crédito:  '+pesoCurS(delta,CUR)+'   → queda en '+pesoCur(nuevoSaldo,CUR)+'\n'+
+    'Efectivo: '+pesoCurS(-delta,CUR)+'   ('+(cobro?'ingreso a la caja':'salida de la caja')+')\n\n'+
+    'El saldo total no cambia. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
+  aplicarAjusteCreditoHoy(iso,delta,nombre,cobro);
+  renderCreditDetailModal();
+  toast('Ajuste registrado el '+fechaTxt);
+}
+// Agrega en un día (creándolo si no existe) el ajuste de crédito y su
+// contrapartida de efectivo, en una sola pasada. Mismo patrón de creación de
+// día que applyLoanMovement(), pero tocando también credMovs/credAdj.
+function aplicarAjusteCreditoHoy(iso,delta,nombre,cobro){
+  const map={};baseForCtx(activeContextId,CUR).forEach(d=>map[d.iso]=d);userDays.forEach(d=>map[d.iso]=d);
+  const existing=map[iso];
+  let day;
+  if(existing){
+    day={...existing,src:'user',movs:(existing.movs||[]).slice(),credMovs:(existing.credMovs||[]).slice()};
+  }else{
+    const allDays=Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+    const prevReal=allDays.filter(d=>!d.empty).slice(-1)[0];
+    const si=prevReal?prevReal.sf:0;
+    const[y,mo,dd]=iso.split('-').map(Number);
+    day={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
+      si,sf:si,ing:0,egr:0,nmov:0,dif:null,fis:null,chq:null,empty:false,caja:[],movs:[],credMovs:[],credSi:0,cred:0,credAdj:0};
+  }
+  const d2=Math.round(delta*100)/100;
+  day.credMovs.push({imp:d2,note:nombre});
+  day.credAdj=Math.round(day.credMovs.reduce((s,x)=>s+x.imp,0)*100)/100;
+  day.movs.push({imp:Math.round(-d2*100)/100,cpt:(cobro?'Cobro de fiado — ':'Fiado — ')+nombre,ref:'Crédito'});
+  day.empty=false;
+  day.ing=Math.round(day.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  day.egr=Math.round(day.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  day.nmov=day.movs.length;
+  const idx=userDays.findIndex(x=>x.iso===iso);
+  if(idx>=0)userDays[idx]=day;else userDays.push(day);
   cascadeChain(activeContextId,CUR,userDays);
-  saveUser();renderAll();renderCreditDetailModal();toast('Ajuste actualizado');
+  saveUser();renderAll();
 }
 function deleteCreditNoteEntry(iso,idx){
   const d=userDays.find(x=>x.iso===iso);
@@ -2200,6 +2253,10 @@ function renderCreditDetailModal(hastaIso){
   const hasta=creditDetailScope;
   const hastaLabel=hasta?hasta.split('-').reverse().join('/'):null;
   const ctx=activeContext(),sym=CUR_SYM[CUR];
+  // "Ajustar hoy" solo tiene sentido en la vista del saldo actual: si el modal
+  // se abrió desde un día viejo (v83 lo acota a esa fecha), un ajuste con fecha
+  // de hoy no se vería en esta pantalla y confundiría más de lo que ayuda.
+  const puedeAjustar=!hasta||hasta===todayIso();
   const items=creditNotesBreakdown(activeContextId,CUR,hasta);
   const total=Math.round(items.reduce((s,x)=>s+x.total,0)*100)/100;
   // Cada nombre/concepto muestra su total (como antes) y, debajo, cada ajuste
@@ -2213,11 +2270,18 @@ function renderCreditDetailModal(hastaIso){
           <span>${e.date}</span>
           <span style="display:flex;align-items:center;gap:2px">
             <span class="${e.imp>=0?'pos':'neg'}" style="min-width:78px;text-align:right;font-family:var(--mono)">${pesoS(e.imp)}</span>
-            <button class="rowact" title="Editar este ajuste" onclick="editCreditNoteEntry('${e.iso}',${e.idx})">✎</button>
             <button class="rowact del" title="Eliminar este ajuste" onclick="deleteCreditNoteEntry('${e.iso}',${e.idx})">${ic('trash',13)}</button>
           </span>
         </div>`).join('');
-      return `<div class="crow" style="font-weight:600"><span>${esc(x.note)}</span><span class="${x.total>=0?'pos':'neg'}">${pesoS(x.total)}</span></div>${rows}`;
+      // El nombre es texto libre y puede traer comillas o apóstrofes (D'Angelo)
+      // que romperían el atributo onclick. encodeURIComponent NO escapa el
+      // apóstrofe (queda en su lista de caracteres permitidos), así que hay que
+      // agregarlo a mano: sin esto, "Juan D'Angelo" generaba
+      // ajustarCreditoHoy(decodeURIComponent('Juan%20D'Angelo')) y el string
+      // cortaba en el apóstrofe. Bug real, encontrado probando ese nombre.
+      const noteAttr=encodeURIComponent(x.note).replace(/'/g,'%27');
+      const btnAjustar=puedeAjustar?`<button class="rowact" style="width:auto;padding:0 9px;font-size:11.5px;font-weight:600" title="Registrar un cambio con fecha de hoy, sin tocar los días anteriores" onclick="ajustarCreditoHoy(decodeURIComponent('${noteAttr}'))">Ajustar hoy</button>`:'';
+      return `<div class="crow" style="font-weight:600"><span>${esc(x.note)}</span><span style="display:flex;align-items:center;gap:8px">${btnAjustar}<span class="${x.total>=0?'pos':'neg'}">${pesoS(x.total)}</span></span></div>${rows}`;
     }).join('')
     :`<div class="empty-state">Sin créditos cargados${hastaLabel?' hasta el '+hastaLabel:' en esta caja'}</div>`;
   document.getElementById('modal').innerHTML=`
@@ -2228,7 +2292,7 @@ function renderCreditDetailModal(hastaIso){
       <div class="ctrlbox">${body}
         ${items.length?`<div class="crow" style="border-top:1px solid var(--line);padding-top:9px;margin-top:8px"><span style="font-weight:700">Total</span><span style="font-weight:700" class="${total>=0?'pos':'neg'}">${pesoS(total)}</span></div>`:''}
       </div>
-      <p class="note">Suma de los ajustes de crédito por nombre/concepto${hastaLabel?', hasta el '+hastaLabel:', en todos los días de esta caja'} — ✎/🗑 en cada renglón para editar o eliminar un ajuste puntual. <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
+      <p class="note">Suma de los ajustes de crédito por nombre/concepto${hastaLabel?', hasta el '+hastaLabel:', en todos los días de esta caja'}.${puedeAjustar?' <b>Ajustar hoy</b> registra un cobro o un fiado nuevo con la fecha de hoy, sin tocar los días anteriores, y mueve el efectivo de la caja en sentido contrario.':''} El 🗑 de cada renglón elimina ese ajuste de su fecha original (sí modifica el pasado). <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
@@ -2715,7 +2779,7 @@ function renderMovRows(){
 // chico. Peor todavía porque la app MUESTRA los importes con punto de miles
 // ($ 1.500), así que tipear exactamente lo que uno ve era el camino directo al
 // error. Se mantiene el signo negativo: hay campos donde es válido (el prompt de
-// editCreditNoteEntry pide "-5000" para dar de baja un crédito).
+// el prompt de ajuste de crédito acepta "-5000" para dar de baja).
 function num(v){
   if(v===''||v==null)return null;
   let s=(''+v).trim().replace(/[^\d.,\-]/g,'');
