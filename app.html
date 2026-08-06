@@ -2150,7 +2150,7 @@ function ajustarCreditoHoy(note){
 }
 // Etiqueta del movimiento de caja que acompaña a un ajuste de crédito.
 // Importe de crédito POSITIVO = le fiaste (sale plata) · NEGATIVO = te pagó (entra).
-function _cptCredito(imp,nombre){return (imp<0?'Cobro de fiado — ':'Fiado — ')+(nombre||'(sin nombre)')}
+function _cptCredito(imp,nombre){return (imp<0?'Cobro de crédito — ':'Crédito otorgado — ')+(nombre||'(sin nombre)')}
 // Recalcula ingresos/egresos/cantidad de movimientos de un día tras tocar `movs`.
 function _recalcTotalesDia(day){
   day.ing=Math.round((day.movs||[]).filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
@@ -2345,6 +2345,10 @@ function renderCreditDetailModal(hastaIso){
   // se abrió desde un día viejo (v83 lo acota a esa fecha), un ajuste con fecha
   // de hoy no se vería en esta pantalla y confundiría más de lo que ayuda.
   const puedeAjustar=!hasta||hasta===todayIso();
+  // Aviso arriba de todo si hay créditos sin su contrapartida de efectivo: es la
+  // causa más común de que el arqueo no cierre, y sin esto no hay forma de
+  // saber de qué día sale la diferencia.
+  const sinMov=creditosSinContrapartida(activeContextId,CUR);
   const items=creditNotesBreakdown(activeContextId,CUR,hasta);
   const total=Math.round(items.reduce((s,x)=>s+x.total,0)*100)/100;
   // Cada nombre/concepto muestra su total (como antes) y, debajo, cada ajuste
@@ -2384,12 +2388,87 @@ function renderCreditDetailModal(hastaIso){
       <div><h3>Detalle de créditos a cobrar</h3><div class="msub">${esc(ctxLabel(ctx))} · ${sym==='$'?'$ Pesos':'US$ Dólares'} · ${hastaLabel?('saldo al '+hastaLabel):'por quién está compuesto el saldo actual'}</div></div>
       <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
     <div class="mbody2">
+      ${sinMov.length?`<div style="border:1px solid var(--red-dim,var(--red));background:var(--red-bg);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:13px">
+        <b style="color:var(--red)">⚠ ${sinMov.length} crédito(s) sin movimiento de caja</b> — por ${pesoS(Math.round(sinMov.reduce((s,x)=>s+x.imp,0)*100)/100)}.
+        Si esa plata se movió de verdad, el saldo está inflado y el arqueo te marca esa diferencia.
+        <button class="rowact" style="width:auto;padding:2px 10px;font-size:11.5px;font-weight:600;margin-left:6px" onclick="openAuditCreditos()">Revisar</button>
+      </div>`:''}
       <div>${body}
         ${items.length?`<div class="credtotal"><span style="font-weight:700">Total a cobrar</span><span class="credtot ${total>=0?'pos':'neg'}">${pesoS(total)}</span></div>`:''}
       </div>
       <p class="note">Suma de los ajustes de crédito por nombre/concepto${hastaLabel?', hasta el '+hastaLabel:', en todos los días de esta caja'}.${puedeAjustar?' <b>Ajustar hoy</b> registra un cobro o un fiado nuevo con la fecha de hoy, sin tocar los días anteriores, y mueve el efectivo de la caja en sentido contrario.':''} El <b>✎</b> corrige un ajuste mal cargado <b>en su fecha original</b>, y el 🗑 lo elimina: los dos recalculan el saldo de crédito de ese día en adelante. <a href="javascript:void(0)" onclick="changeCreditPin()" style="color:var(--gold2);font-weight:600">Cambiar clave</a></p>
     </div>`;
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+/* ===== auditoría: créditos sin su movimiento de caja =====
+   El saldo (v82) suma credAdj asumiendo que fiar tiene DOS patas: sale el
+   efectivo y nace el crédito, que se compensan. Si un día quedó con el crédito
+   pero SIN la salida de efectivo, el saldo del sistema queda inflado por ese
+   monto y el arqueo contra el conteo físico marca esa misma diferencia (la
+   plata sí salió del cajón, pero nada la registró). Desde v93 saveDay()
+   pregunta y lo agrega, pero los días cargados ANTES quedaron así, y hay que
+   poder encontrarlos: el usuario venía arrastrando una diferencia de $1.000.000
+   sin saber de qué día salía. */
+function creditosSinContrapartida(ctxId,cur){
+  const out=[];
+  ctxRealDays(ctxId,cur).forEach(d=>{
+    if(d.src!=='user')return; // el histórico importado no tiene credMovs
+    const movs=(d.movs||[]).slice();
+    (d.credMovs||[]).forEach((cm,idx)=>{
+      if(!cm||!cm.imp)return;
+      // Busca un movimiento de caja que compense este crédito y lo "consume",
+      // para que dos créditos iguales el mismo día necesiten dos movimientos.
+      const i=movs.findIndex(m=>Math.abs(m.imp+cm.imp)<0.005);
+      if(i>=0){movs.splice(i,1);return}
+      out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp});
+    });
+  });
+  return out;
+}
+function openAuditCreditos(){
+  const faltan=creditosSinContrapartida(activeContextId,CUR);
+  const tot=Math.round(faltan.reduce((s,x)=>s+x.imp,0)*100)/100;
+  const filas=faltan.map(f=>`
+    <div class="crow" style="align-items:center">
+      <span><b>${f.date}</b> · ${esc(f.note)}</span>
+      <span style="display:flex;align-items:center;gap:10px">
+        <span class="${f.imp>=0?'pos':'neg'}" style="font-family:var(--mono)">${pesoS(f.imp)}</span>
+        <button class="rowact" style="width:auto;padding:0 9px;font-size:11.5px;font-weight:600"
+          title="Agregar a ese día el movimiento de caja que falta (${pesoS(-f.imp)})"
+          onclick="corregirCreditoSinMov('${f.iso}',${f.idx})">Agregar ${pesoS(-f.imp)}</button>
+      </span>
+    </div>`).join('');
+  document.getElementById('modal').innerHTML=`
+    <div class="mtop"><div class="dd">${ic('alert',24)}</div>
+      <div><h3>Créditos sin movimiento de caja</h3><div class="msub">${esc(ctxLabel(activeContext()))} · ${CUR==='ARS'?'$ Pesos':'US$ Dólares'}</div></div>
+      <div style="margin-left:auto"><button class="mclose" onclick="closeModal()">✕</button></div></div>
+    <div class="mbody2">
+      ${faltan.length?`
+        <p class="note" style="margin-bottom:12px">Estos créditos no tienen la entrada o salida de efectivo que los acompañe. Si la plata <b>sí</b> se movió, el saldo del sistema está inflado por ese monto y el arqueo te marca esa diferencia. Tocá el botón para agregar el movimiento que falta.</p>
+        <div>${filas}
+          <div class="credtotal"><span style="font-weight:700">Total sin registrar</span><span class="credtot ${tot>=0?'pos':'neg'}">${pesoS(tot)}</span></div>
+        </div>
+        <p class="note" style="margin-top:12px">Si en alguno fiaste <b>mercadería</b> (no salió efectivo), dejalo como está: ahí el movimiento no corresponde.</p>
+      `:`<div class="empty-state"><div class="big">✓</div>Todos los créditos tienen su movimiento de caja.<br>Si tenés diferencia de arqueo, no viene de acá.</div>`}
+    </div>`;
+  document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
+}
+function corregirCreditoSinMov(iso,idx){
+  const d=userDays.find(x=>x.iso===iso);
+  if(!d){toast('Ese día no se puede editar');return}
+  const cm=(d.credMovs||[])[idx];if(!cm)return;
+  const imp=Math.round(-cm.imp*100)/100;
+  const nombre=(cm.note||'').trim()||'(sin nombre)';
+  if(!confirm('Agregar al día '+d.date+' el movimiento de caja que falta:\n\n'+
+    (imp<0?'Egreso':'Ingreso')+' de '+pesoS(imp)+'  ·  '+_cptCredito(cm.imp,nombre)+'\n\n'+
+    'Esto NO cambia el saldo final (el crédito ya lo estaba sumando), pero corrige\n'+
+    'el efectivo y hace que el arqueo cierre.\n\n¿Confirmás?'))return;
+  d.movs.push({imp,cpt:_cptCredito(cm.imp,nombre),ref:'Crédito'});
+  d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+  d.nmov=d.movs.length;
+  cascadeChain(activeContextId,CUR,userDays);
+  saveUser();renderAll();openAuditCreditos();toast('Movimiento agregado al '+d.date);
 }
 // Alarma de diferencia de caja grande: recorre TODAS las empresas/proyectos y
 // monedas (no solo la caja activa) usando el mismo umbral que isWarn(), pero
@@ -3037,16 +3116,23 @@ function saveDay(){
   // otorgo un crédito"). Se guarda ANTES de cerrar el editor porque
   // `edState` sigue disponible después, pero es más prolijo capturarlo acá.
   const newGrants=(edState.credMovs||[]).filter(cm=>!cm._preexisting&&cm.type==='in'&&num(cm.amt)>0&&(cm.note||'').trim());
-  // Contrapartida de efectivo de los créditos NUEVOS cargados desde el editor.
-  // Bug real reportado: el usuario cargó un crédito de $3.750.000 esperando que
-  // "lo hiciera automáticamente" (como sí lo hace ajustarCreditoHoy), pero acá
-  // no se generaba el egreso. Resultado: el saldo subía $3.750.000 de la nada
-  // —sf incluye credAdj (v82) sin la salida que lo compensa— y el arqueo marcaba
-  // esa misma diferencia contra el conteo físico, porque la plata SÍ había
-  // salido de la caja. Se pregunta en vez de hacerlo callado, porque fiar
-  // mercadería (sin salida de efectivo) es un caso legítimo y ahí NO va el
-  // movimiento. Solo mira las filas nuevas (`!_preexisting`): reeditar un día
-  // viejo no vuelve a agregar nada.
+  // Contrapartida de efectivo de los créditos NUEVOS cargados desde el editor,
+  // generada AUTOMÁTICAMENTE (pedido explícito del usuario: "si otorgo un
+  // crédito tiene que salir automáticamente de la caja como crédito otorgado,
+  // al revés si recibo"). Otorgar crédito => EGRESO; cobrar un crédito =>
+  // INGRESO. Es la misma mecánica de dos patas que ya hacía ajustarCreditoHoy();
+  // acá faltaba, y por eso el saldo quedaba inflado (sf suma credAdj desde v82
+  // dando por hecho que la salida ya está registrada) y el arqueo marcaba justo
+  // esa diferencia contra el conteo físico, porque la plata sí había salido.
+  //
+  // Se evaluó preguntar antes (por el caso de fiar MERCADERÍA, donde no sale
+  // efectivo) y se descartó: el usuario lo pidió automático dos veces. Si algún
+  // día no corresponde, el movimiento queda visible en la lista y se borra.
+  //
+  // Dos resguardos que evitan duplicar:
+  //  - solo filas nuevas (`!_preexisting`): reeditar un día viejo no re-agrega;
+  //  - solo si no hay ya un movimiento que lo compense: si lo cargaste a mano,
+  //    no se suma otro.
   const credNuevos=(edState.credMovs||[]).filter(cm=>{
     if(cm._preexisting)return false;
     const a=num(cm.amt);
@@ -3054,22 +3140,13 @@ function saveDay(){
   }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim()}));
   const sinContrapartida=credNuevos.filter(cn=>!c.movs.some(m=>Math.abs(m.imp+cn.imp)<0.005));
   if(sinContrapartida.length){
-    const detalle=sinContrapartida.map(cn=>
-      '  · '+cn.note+': crédito '+pesoS(cn.imp)+'  →  efectivo '+pesoS(-cn.imp)).join('\n');
-    if(confirm(
-      'Cargaste '+(sinContrapartida.length===1?'un crédito':sinContrapartida.length+' créditos')+' sin el movimiento de caja que lo acompañe:\n\n'+detalle+'\n\n'+
-      '¿Salió (o entró) ese efectivo de la caja?\n\n'+
-      'ACEPTAR = sí, agrego el movimiento automáticamente.\n'+
-      'CANCELAR = no salió plata (fiaste mercadería): dejo solo el crédito.\n\n'+
-      'Ojo: si salió plata y no la cargás, el saldo final queda inflado y el\narqueo contra el conteo físico te va a marcar esa diferencia.')){
-      sinContrapartida.forEach(cn=>{
-        c.movs.push({imp:Math.round(-cn.imp*100)/100,
-          cpt:(cn.imp>0?'Fiado — ':'Cobro de fiado — ')+cn.note,ref:'Crédito'});
-      });
-      c.ing=Math.round(c.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
-      c.egr=Math.round(c.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
-      c.sf=Math.round((c.si+c.ing+c.egr)*100)/100;
-    }
+    sinContrapartida.forEach(cn=>{
+      c.movs.push({imp:Math.round(-cn.imp*100)/100,
+        cpt:_cptCredito(cn.imp,cn.note),ref:'Crédito'});
+    });
+    c.ing=Math.round(c.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+    c.egr=Math.round(c.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+    c.sf=Math.round((c.si+c.ing+c.egr)*100)/100;
   }
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
