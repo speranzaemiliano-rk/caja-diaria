@@ -384,6 +384,14 @@ tbody tr:last-child td{border-bottom:none}
 .tgl button{flex:1;background:none;border:none;color:var(--ink3);font-family:inherit;font-size:12px;font-weight:700;padding:8px 0;cursor:pointer;transition:.12s}
 .tgl button.in.on{background:var(--green-bg);color:var(--green)}
 .tgl button.out.on{background:var(--red-bg);color:var(--red)}
+/* Créditos: el toggle significa lo CONTRARIO que en un movimiento de caja.
+   "in" = otorgo crédito = SALE plata (rojo) · "out" = me pagan = ENTRA (verde).
+   Con el ＋/− verde/rojo de siempre se leía al revés — bug real reportado:
+   "lo registra como ingreso y es egreso". Los data-t siguen siendo in/out
+   porque de eso depende el signo del crédito; acá solo se invierte el color. */
+#credMvList .tgl button.in.on{background:var(--red-bg);color:var(--red)}
+#credMvList .tgl button.out.on{background:var(--green-bg);color:var(--green)}
+#credMvList .tgl button{font-size:11.5px;letter-spacing:.2px}
 .rmrow{background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink3);cursor:pointer;height:38px;font-size:16px;transition:.15s}
 .rmrow:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
 .valebtn{background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink3);cursor:pointer;height:38px;display:grid;place-items:center;transition:.15s}
@@ -1347,7 +1355,7 @@ function credLineRows(d,neto,extraCols){
   const pad=extraCols?'<td></td>':'';
   const padTop=extraCols?'<td style="border-top:1px solid var(--line2)"></td>':'';
   const varSaldo=Math.round((neto+cred)*100)/100;
-  return `<tr style="cursor:default">${pad}<td style="font-weight:700;color:${cred>=0?'var(--green)':'var(--red)'}">${pesoS(cred)}</td><td class="l" style="color:var(--ink3)">Créditos a cobrar del día <span style="opacity:.7">· ${cred>=0?'fiado: sale efectivo y entra un crédito':'cobro de fiado'}</span></td><td></td></tr>
+  return `<tr style="cursor:default">${pad}<td style="font-weight:700;color:${cred>=0?'var(--green)':'var(--red)'}">${pesoS(cred)}</td><td class="l" style="color:var(--ink3)">Créditos a cobrar del día <span style="opacity:.7">· ${cred>=0?'crédito otorgado (el egreso del efectivo va arriba)':'crédito cobrado (el ingreso del efectivo va arriba)'}</span></td><td></td></tr>
     <tr style="cursor:default">${padTop}<td style="font-weight:700;border-top:1px solid var(--line2);color:${varSaldo>=0?'var(--green)':'var(--red)'}">${pesoS(varSaldo)}</td><td class="l" style="border-top:1px solid var(--line2);color:var(--ink2);font-weight:600">Variación del saldo</td><td style="border-top:1px solid var(--line2)"></td></tr>`;
 }
 function renderDayMovs(){
@@ -3023,8 +3031,8 @@ function renderCredMovRows(){
   html+=visibleIdx.map(i=>{
     const cm=rows[i];
     return `
-    <div class="mvrow" data-i="${i}" style="grid-template-columns:90px 1.6fr 1fr auto;margin-bottom:8px">
-      <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in">＋</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out">−</button></div>
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:132px 1.6fr 1fr auto;margin-bottom:8px">
+      <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in" title="Le fiás: el crédito sube y SALE plata de la caja">Otorgo</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out" title="Te paga: el crédito baja y ENTRA plata a la caja">Cobro</button></div>
       <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
       <div style="display:flex;gap:6px">
