@@ -3037,6 +3037,40 @@ function saveDay(){
   // otorgo un crédito"). Se guarda ANTES de cerrar el editor porque
   // `edState` sigue disponible después, pero es más prolijo capturarlo acá.
   const newGrants=(edState.credMovs||[]).filter(cm=>!cm._preexisting&&cm.type==='in'&&num(cm.amt)>0&&(cm.note||'').trim());
+  // Contrapartida de efectivo de los créditos NUEVOS cargados desde el editor.
+  // Bug real reportado: el usuario cargó un crédito de $3.750.000 esperando que
+  // "lo hiciera automáticamente" (como sí lo hace ajustarCreditoHoy), pero acá
+  // no se generaba el egreso. Resultado: el saldo subía $3.750.000 de la nada
+  // —sf incluye credAdj (v82) sin la salida que lo compensa— y el arqueo marcaba
+  // esa misma diferencia contra el conteo físico, porque la plata SÍ había
+  // salido de la caja. Se pregunta en vez de hacerlo callado, porque fiar
+  // mercadería (sin salida de efectivo) es un caso legítimo y ahí NO va el
+  // movimiento. Solo mira las filas nuevas (`!_preexisting`): reeditar un día
+  // viejo no vuelve a agregar nada.
+  const credNuevos=(edState.credMovs||[]).filter(cm=>{
+    if(cm._preexisting)return false;
+    const a=num(cm.amt);
+    return a!=null&&a!==0&&(cm.note||'').trim();
+  }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim()}));
+  const sinContrapartida=credNuevos.filter(cn=>!c.movs.some(m=>Math.abs(m.imp+cn.imp)<0.005));
+  if(sinContrapartida.length){
+    const detalle=sinContrapartida.map(cn=>
+      '  · '+cn.note+': crédito '+pesoS(cn.imp)+'  →  efectivo '+pesoS(-cn.imp)).join('\n');
+    if(confirm(
+      'Cargaste '+(sinContrapartida.length===1?'un crédito':sinContrapartida.length+' créditos')+' sin el movimiento de caja que lo acompañe:\n\n'+detalle+'\n\n'+
+      '¿Salió (o entró) ese efectivo de la caja?\n\n'+
+      'ACEPTAR = sí, agrego el movimiento automáticamente.\n'+
+      'CANCELAR = no salió plata (fiaste mercadería): dejo solo el crédito.\n\n'+
+      'Ojo: si salió plata y no la cargás, el saldo final queda inflado y el\narqueo contra el conteo físico te va a marcar esa diferencia.')){
+      sinContrapartida.forEach(cn=>{
+        c.movs.push({imp:Math.round(-cn.imp*100)/100,
+          cpt:(cn.imp>0?'Fiado — ':'Cobro de fiado — ')+cn.note,ref:'Crédito'});
+      });
+      c.ing=Math.round(c.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
+      c.egr=Math.round(c.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
+      c.sf=Math.round((c.si+c.ing+c.egr)*100)/100;
+    }
+  }
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
   // dif queda provisorio (cascadeChain lo recalcula sumando créditos al conteo).
