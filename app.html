@@ -4319,7 +4319,24 @@ function cambiarPin(){
     if(rawIn==null)return null;
     var s=String(rawIn).trim();
     if(!s)return null;
-    s=s.replace(/[×xX]/g,'*').replace(/[÷]/g,'/').replace(/,/g,'.').replace(/\s+/g,'');
+    s=s.replace(/[×xX]/g,'*').replace(/[÷]/g,'/').replace(/\s+/g,'');
+    // Formato argentino: punto = MILES, coma = decimales. Antes se hacía
+    // .replace(/,/g,'.') y listo, así que "1.500 + 2.300" daba 3,8 en vez de
+    // 3.800 — el mismo bug que tenía num() con los importes del editor. Se
+    // normaliza cada número por separado, ANTES de tocar las comas, con la
+    // misma regla: si están los dos separadores manda el último; con solo
+    // puntos, uno seguido de exactamente 3 dígitos es de miles.
+    s=s.replace(/[0-9][0-9.,]*/g,function(tok){
+      var lastDot=tok.lastIndexOf('.'),lastComma=tok.lastIndexOf(',');
+      if(lastDot>=0&&lastComma>=0)
+        return lastComma>lastDot?tok.replace(/\./g,'').replace(',','.'):tok.replace(/,/g,'');
+      if(lastComma>=0)return tok.replace(',','.');
+      if(lastDot>=0){
+        var parts=tok.split('.');
+        if(parts.length>2||parts[1].length===3)return parts.join('');
+      }
+      return tok;
+    });
     s=s.replace(/([0-9.]+)%/g,'($1/100)'); // "21%" -> (21/100)
     if(!/^[0-9.+\-*/()]+$/.test(s))return NaN;
     try{var v=Function('"use strict";return('+s+')')();return (typeof v==='number'&&isFinite(v))?v:NaN;}catch(e){return NaN;}
