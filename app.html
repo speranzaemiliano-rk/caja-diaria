@@ -2702,7 +2702,12 @@ function renderLoanSelects(){
   const other=contexts.find(c=>c.id!==activeContextId);
   if(other)document.getElementById('loanTo').value=other.id;
   document.getElementById('loanCur').value=CUR;
-  if(!document.getElementById('loanDate').value)document.getElementById('loanDate').value=todayIso();
+  // El préstamo se propone SIEMPRE con la fecha real de hoy (se resetea al abrir /
+  // refrescar la vista, no sólo si está vacío): así un préstamo entra como una
+  // SALIDA del día de hoy y se ve en los movimientos de hoy, en vez de quedar
+  // pegado a una fecha vieja. editLoan() pisa este valor después con la fecha del
+  // préstamo que se está editando, así que editar sigue funcionando.
+  if(!editingLoanId)document.getElementById('loanDate').value=todayIso();
 }
 let loanFilterPair=null;
 function renderLoanSummary(){
