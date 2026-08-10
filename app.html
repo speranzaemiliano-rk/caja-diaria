@@ -990,10 +990,13 @@ function recompute(){
   // Normaliza el saldo encadenado de créditos a cobrar (y si/sf) por si hay días
   // guardados antes de recalcular en cascada — no depende de haber editado algo.
   cascadeChain(activeContextId,CUR,userDays);
+  const baseArr=baseFor(),baseByIso={};baseArr.forEach(d=>baseByIso[d.iso]=d);
   const map={};
-  baseFor().forEach(d=>map[d.iso]=d);
-  userDays.forEach(d=>map[d.iso]=d); // user day overrides base (incl. empty placeholders)
+  baseArr.forEach(d=>map[d.iso]={...d}); // COPIA del histórico: nunca mutar BASE_SEED (_correrHistoricoPorUser corre su sf)
+  userDays.forEach(d=>map[d.iso]={...d}); // user day overrides base (incl. empty placeholders) — copia para no pisar el estado persistido
   days=Object.values(map).map(_normDia).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  _correrHistoricoPorUser(days,baseByIso); // refleja movimientos con fecha vieja en el saldo del histórico posterior
+
   real=days.filter(d=>!d.empty);
   first=real[0]||null;last=real[real.length-1]||null;
   totIng=real.reduce((s,d)=>s+(d.ing||0),0);
@@ -2061,6 +2064,61 @@ function cascadeChain(ctxId,cur,ud){
   });
   return ud;
 }
+// Corre el saldo mostrado de los días del HISTÓRICO IMPORTADO (días `base`, que
+// sólo tiene la caja original en ARS) que quedan DESPUÉS de un movimiento que el
+// usuario cargó con una fecha ANTERIOR al último día del histórico — por ejemplo
+// un préstamo entre empresas fechado dentro del rango del histórico.
+//
+// Por qué hace falta: cascadeChain() encadena bien los días de usuario, pero al
+// pasar por un día base hacía `prevSf=d.sf`, es decir RESETEABA el saldo
+// corriente al valor congelado del histórico, descartando lo que el usuario
+// había cargado antes. Resultado: el préstamo quedaba registrado y salía en el
+// destino, pero el saldo ACTUAL de la caja origen no bajaba ("hice un préstamo y
+// no me lo bajó de caja"). Esto lo arregla arrastrando ese delta hacia adelante.
+//
+// Clave: el histórico NO se re-encadena (tiene ~20 saltos propios de la
+// importación que son "verdad" y hay que preservar). Sólo se le SUMA el delta
+// acumulado que introdujeron los días de usuario anteriores. Si no hay ningún
+// día de usuario intercalado antes de un día base (el caso normal: los días que
+// se cargan van siempre a futuro), el delta es 0 y la función NO toca nada.
+// Opera sobre los objetos que recibe, que deben ser COPIAS de los días base
+// (nunca las referencias de BASE_SEED), para no corromper el histórico.
+function _correrHistoricoPorUser(daysSorted, baseByIso){
+  const r2=x=>Math.round((x||0)*100)/100;
+  // `carry` = cuánto corrió el saldo por lo que el usuario cargó con fecha vieja.
+  // SÓLO cambia en un día de usuario real; los días del histórico y los vacíos
+  // nunca lo tocan (por eso, sin ningún día de usuario intercalado, carry queda
+  // en 0 y la función es un no-op perfecto: el histórico no se modifica).
+  // `lastBaseSf` sigue el saldo congelado del histórico (para ubicar dónde
+  // "arranca" un día de usuario intercalado).
+  let run=null;   // saldo corriente MOSTRADO (encadena los días de usuario, igual que cascadeChain)
+  let carry=0;    // corrimiento a aplicar a los días del histórico — SÓLO cambia en un día de usuario
+  for(const d of daysSorted){
+    const bd=baseByIso[d.iso];
+    if(d.empty){
+      if(bd){ if(carry!==0){d.si=r2((bd.si||0)+carry);d.sf=r2((bd.sf||0)+carry);} run=r2((bd.sf||0)+carry); }
+      else if(run!=null){ d.si=r2(run); d.sf=r2(run); } // tumba de usuario: arrastra el corriente
+      continue;
+    }
+    if(bd&&d.src!=='user'){
+      // día del histórico importado: autoritativo (preserva sus saltos propios),
+      // sólo corrido por el carry que dejaron los días de usuario anteriores.
+      if(carry!==0){ d.si=r2((bd.si||0)+carry); d.sf=r2((bd.sf||0)+carry); if(d.fis!=null)d.dif=r2(d.sf-((d.fis||0)+(d.cred||0))); }
+      run=r2((bd.sf||0)+carry);
+    }else{
+      // día de usuario (intercalado en el histórico o pisando un día base):
+      // encadena desde el corriente. Sin histórico previo arranca de su propio si
+      // (idéntico a cascadeChain) → no-op en cajas sin histórico.
+      const net=(d.ing||0)+(d.egr||0)+(d.credAdj!=null?d.credAdj:0);
+      const si=(run!=null?run:(d.si||0)), sf=r2(si+net);
+      if(r2(d.si)!==r2(si))d.si=r2(si);
+      if(r2(d.sf)!==sf)d.sf=sf;
+      run=sf;
+      carry=bd?r2(sf-(bd.sf||0)):r2(carry+net);
+    }
+  }
+  return daysSorted;
+}
 // Días reales (no vacíos, ordenados cronológicamente) de UNA caja cualquiera
 // (no necesariamente la activa) — para tarjetas/alarmas que agregan datos de
 // TODAS las empresas/proyectos y monedas a la vez. loadUserDaysFor() siempre
@@ -2068,8 +2126,11 @@ function cascadeChain(ctxId,cur,ud){
 function ctxRealDays(ctxId,cur){
   const ud=loadUserDaysFor(ctxId,cur);
   cascadeChain(ctxId,cur,ud);
-  const map={};baseForCtx(ctxId,cur).forEach(d=>map[d.iso]=d);ud.forEach(d=>map[d.iso]=d);
-  return Object.values(map).filter(d=>!d.empty).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  const baseArr=baseForCtx(ctxId,cur),baseByIso={};baseArr.forEach(d=>baseByIso[d.iso]=d);
+  const map={};baseArr.forEach(d=>map[d.iso]={...d});ud.forEach(d=>map[d.iso]={...d});
+  const arr=Object.values(map).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  _correrHistoricoPorUser(arr,baseByIso);
+  return arr.filter(d=>!d.empty);
 }
 /* ============ detalle de créditos a cobrar, protegido con clave ============
    Pedido explícito del usuario: el desglose de "quién forma ese crédito" (los
