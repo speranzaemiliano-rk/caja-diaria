@@ -2760,13 +2760,25 @@ let editIso=null,edState=null;
 // se esté revelando.
 let credRowsUnlocked=false;
 function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
+// Fecha propuesta para un día NUEVO: la fecha REAL de hoy (pedido explícito del
+// usuario: "cuando genero un nuevo día me toma el día como si fuera el siguiente
+// al que estaba cargado y eso está mal, me tiene que tomar el día de la fecha
+// real"). Antes se usaba nextDate() = último día cargado + 1 hábil, que dejaba
+// la fecha desfasada cuando pasaban varios días sin cargar. Sólo si ya existe un
+// día registrado con la fecha de hoy caemos a nextDate() para no proponer una
+// fecha que chocaría al guardar (saveDay igual valida el choque).
+function nuevoDiaFecha(){
+  const hoy=todayIso();
+  const chocaHoy=days.some(d=>d.iso===hoy&&!d.empty);
+  return chocaHoy?nextDate():hoy;
+}
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
 function blankCredMov(){return{type:'in',amt:'',note:''}}
 function blankFisMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
   credRowsUnlocked=false;
-  let m={iso:nextDate(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
+  let m={iso:nuevoDiaFecha(),si:last?last.sf:0,fisMovs:[],chq:'',credSi:last?(last.cred||0):0,credMovs:[],movs:[blankMov()]};
   if(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
     // como una fila editable ya cargada, en vez de perder ese valor.
