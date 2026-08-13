@@ -424,10 +424,13 @@ tbody tr:last-child td{border-bottom:none}
   .mvhead{display:none}
   .mvrow{grid-template-columns:1fr 1fr;gap:8px}
   .mvrow .rmrow{grid-column:2}
-  /* La fila de ajuste de crédito arma su propia grilla de 4 columnas (toggle,
-     nota, importe, quitar) con estilo inline — se apila igual que un
-     movimiento normal, en 2x2. */
+  /* La fila de ajuste de crédito arma su propia grilla de 5 columnas (toggle,
+     nombre, concepto, importe, botones) con estilo inline — se apila igual que
+     un movimiento normal. El nombre y el concepto van a fila completa: son
+     texto libre y con media fila quedan ilegibles (el nombre además es la clave
+     de agrupación de la cuenta corriente, no un campo secundario). */
   #credMvList .mvrow{grid-template-columns:1fr 1fr!important}
+  #credMvList .mvrow input.note,#credMvList .mvrow input.cptcred{grid-column:1/-1}
   /* Fecha / Saldo inicial / Día del encabezado del editor: 3 columnas apretadas
      (el importe queda con muy poco espacio) — se apilan en pantallas chicas. */
   #edHeadGrid{grid-template-columns:1fr!important}
@@ -1658,16 +1661,16 @@ function printVale(i){
   const amt=num(cm.amt);
   if(amt==null||amt<=0){toast('Cargá un importe válido antes de imprimir el vale');return}
   const note=(cm.note||'').trim();
-  if(!note){toast('Cargá el nombre / concepto antes de imprimir el vale');return}
+  if(!note){toast('Cargá el nombre antes de imprimir el vale');return}
   const fechaIso=document.getElementById('f_date')?.value||edState.iso||new Date().toISOString().slice(0,10);
-  printValeFor(amt,note,cm.type,fechaIso);
+  printValeFor(amt,note,cm.type,fechaIso,(cm.cpt||'').trim());
 }
 // Arma y abre el vale (usado tanto por el botón manual `printVale(i)` como
 // por el auto-imprimir de `saveDay()` al otorgar un crédito nuevo) — no
 // depende del editor abierto ni de `edState`, así que sigue funcionando
 // aunque el editor ya se haya cerrado (pedido explícito del usuario: "que me
 // imprima un vale de caja cuando otorgo un crédito", automático al guardar).
-function printValeFor(amt,note,type,fechaIso){
+function printValeFor(amt,note,type,fechaIso,cpt){
   const [y,m,d]=fechaIso.split('-');
   const fechaFmt=`${d}/${m}/${y}`;
   const letras=importeEnLetras(amt,CUR);
@@ -1687,8 +1690,12 @@ function printValeFor(amt,note,type,fechaIso){
           <div style="font-size:15px;margin-top:4px">${esc(letras)}</div>
           <div class="mono" style="font-size:13px;color:#7a1330;margin-top:2px">${peso(amt)}</div>
         </div>
+        <div style="padding:12px 20px;border-bottom:1.5px solid #7a1330">
+          <div style="font-size:11px;letter-spacing:.5px;color:#7a1330;font-weight:700;text-transform:uppercase">Recibí de / Entregado a</div>
+          <div style="font-size:15px;margin-top:4px">${esc(note)}</div>
+        </div>
         <div style="background:#7a1330;color:#fff;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Concepto</div>
-        <div style="padding:16px 20px;min-height:90px;font-size:14px;line-height:1.7;background:linear-gradient(#fff 0 50%,#fbebee 50% 100%);background-size:100% 34px">${esc(note)}${type==='out'?' (devolución / pago de crédito)':''}</div>
+        <div style="padding:16px 20px;min-height:90px;font-size:14px;line-height:1.7;background:linear-gradient(#fff 0 50%,#fbebee 50% 100%);background-size:100% 34px">${esc((cpt||'').trim()||note)}${type==='out'?' (devolución / pago de crédito)':''}</div>
         <div style="display:flex;border-top:1.5px solid #7a1330;font-size:12px">
           <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Fecha</div><div style="margin-top:16px">${fechaFmt}</div></div>
           <div style="flex:1;padding:12px 16px;border-right:1.5px solid #7a1330"><div style="color:#7a1330;font-weight:700;text-transform:uppercase;font-size:10.5px">Autorizado por</div><div style="margin-top:16px">&nbsp;</div></div>
@@ -2180,7 +2187,7 @@ function creditNoteEntries(note,hastaIso){
   userDays.forEach(d=>{
     if(hastaIso&&d.iso>hastaIso)return;
     (d.credMovs||[]).forEach((cm,idx)=>{
-      if(((cm.note||'').trim()||'(sin nombre)')===key)out.push({iso:d.iso,date:d.date,idx,imp:cm.imp});
+      if(((cm.note||'').trim()||'(sin nombre)')===key)out.push({iso:d.iso,date:d.date,idx,imp:cm.imp,cpt:(cm.cpt||'').trim()});
     });
   });
   return out.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
@@ -2213,20 +2220,30 @@ function ajustarCreditoHoy(note){
   if(txt==null)return;
   const delta=num(txt);
   if(delta==null||delta===0){toast('Importe inválido');return}
+  const cptTxt=prompt('Concepto de este ajuste (opcional — no afecta el agrupamiento por persona):','');
+  if(cptTxt==null)return;
+  const cpt=cptTxt.trim();
   const cobro=delta<0;
   const nuevoSaldo=Math.round((saldoActual+delta)*100)/100;
   if(!confirm(
-    'Ajuste del '+fechaTxt+' para "'+nombre+'":\n\n'+
+    'Ajuste del '+fechaTxt+' para "'+nombre+'"'+(cpt?' ('+cpt+')':'')+':\n\n'+
     'Crédito:  '+pesoCurS(delta,CUR)+'   → queda en '+pesoCur(nuevoSaldo,CUR)+'\n'+
     'Efectivo: '+pesoCurS(-delta,CUR)+'   ('+(cobro?'ingreso a la caja':'salida de la caja')+')\n\n'+
     'El saldo total no cambia. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
-  aplicarAjusteCreditoHoy(iso,delta,nombre,cobro);
+  aplicarAjusteCreditoHoy(iso,delta,nombre,cobro,cpt);
   renderCreditDetailModal();
   toast('Ajuste registrado el '+fechaTxt);
 }
 // Etiqueta del movimiento de caja que acompaña a un ajuste de crédito.
 // Importe de crédito POSITIVO = le fiaste (sale plata) · NEGATIVO = te pagó (entra).
-function _cptCredito(imp,nombre){return (imp<0?'Cobro de crédito — ':'Crédito otorgado — ')+(nombre||'(sin nombre)')}
+// `cpt` (opcional) es el concepto libre de la fila de crédito: se agrega al
+// final del texto del movimiento de caja para que en la lista de movimientos se
+// lea "Crédito otorgado — Juan Pérez · adelanto". El nombre va SIEMPRE primero
+// porque es la clave de agrupación de la cuenta corriente.
+function _cptCredito(imp,nombre,cpt){
+  const c=(cpt||'').trim();
+  return (imp<0?'Cobro de crédito — ':'Crédito otorgado — ')+(nombre||'(sin nombre)')+(c?' · '+c:'');
+}
 // Recalcula ingresos/egresos/cantidad de movimientos de un día tras tocar `movs`.
 function _recalcTotalesDia(day){
   day.ing=Math.round((day.movs||[]).filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
@@ -2249,7 +2266,7 @@ function _movDeCredito(day,cm){
 // Agrega en un día (creándolo si no existe) el ajuste de crédito y su
 // contrapartida de efectivo, en una sola pasada. Mismo patrón de creación de
 // día que applyLoanMovement(), pero tocando también credMovs/credAdj.
-function aplicarAjusteCreditoHoy(iso,delta,nombre,cobro){
+function aplicarAjusteCreditoHoy(iso,delta,nombre,cobro,cpt){
   const map={};baseForCtx(activeContextId,CUR).forEach(d=>map[d.iso]=d);userDays.forEach(d=>map[d.iso]=d);
   const existing=map[iso];
   let day;
@@ -2268,9 +2285,12 @@ function aplicarAjusteCreditoHoy(iso,delta,nombre,cobro){
   // editar o borrar el ajuste dejaba el movimiento de caja viejo dando vueltas: el
   // crédito cambiaba y el efectivo no (bug real, reportado por el usuario).
   const cid='C'+Date.now()+'-'+Math.floor(Math.random()*100000);
-  day.credMovs.push({imp:d2,note:nombre,cid});
+  const cptTrim=(cpt||'').trim();
+  const cmNuevo={imp:d2,note:nombre,cid};
+  if(cptTrim)cmNuevo.cpt=cptTrim;
+  day.credMovs.push(cmNuevo);
   day.credAdj=Math.round(day.credMovs.reduce((s,x)=>s+x.imp,0)*100)/100;
-  day.movs.push({imp:Math.round(-d2*100)/100,cpt:_cptCredito(d2,nombre),ref:'Crédito',cid});
+  day.movs.push({imp:Math.round(-d2*100)/100,cpt:_cptCredito(d2,nombre,cptTrim),ref:'Crédito',cid});
   day.empty=false;
   _recalcTotalesDia(day);
   const idx=userDays.findIndex(x=>x.iso===iso);
@@ -2290,8 +2310,10 @@ function editCreditNoteEntry(iso,idx){
   const d=userDays.find(x=>x.iso===iso);
   if(!d){toast('Solo podés corregir ajustes de días que cargaste vos');return}
   const cm=(d.credMovs||[])[idx];if(!cm)return;
-  const newNote=prompt('Corregir el ajuste del '+d.date+' (se modifica ESE día, no hoy).\n\nNombre / concepto:',cm.note||'');
+  const newNote=prompt('Corregir el ajuste del '+d.date+' (se modifica ESE día, no hoy).\n\nNombre de la persona (es lo que agrupa la cuenta corriente):',cm.note||'');
   if(newNote==null)return;
+  const newCpt=prompt('Concepto del ajuste del '+d.date+' (opcional — no afecta el agrupamiento por persona):',cm.cpt||'');
+  if(newCpt==null)return;
   const newAmtStr=prompt('Importe del ajuste del '+d.date+'.\n\nPositivo = crédito otorgado (fiado)\nNegativo = baja del crédito (ej. -5000)',cm.imp);
   if(newAmtStr==null)return;
   const newAmt=num(newAmtStr);
@@ -2303,19 +2325,21 @@ function editCreditNoteEntry(iso,idx){
   const efectivoTxt=iMov>=0
     ? 'Efectivo: '+pesoS(-cm.imp)+'  →  '+pesoS(-nuevo)+'\n'
     : 'Este ajuste no tiene movimiento de efectivo asociado: la caja no cambia.\n';
-  if(nuevo!==cm.imp||newNote.trim()!==(cm.note||''))
+  const _lbl=(n,c)=>(n||'(sin nombre)')+(c?' · '+c:'');
+  if(nuevo!==cm.imp||newNote.trim()!==(cm.note||'')||newCpt.trim()!==(cm.cpt||''))
     if(!confirm('Corregir el ajuste del '+d.date+':\n\n'+
-      (cm.note||'(sin nombre)')+'  '+pesoS(cm.imp)+'\n        ↓\n'+
-      (newNote.trim()||'(sin nombre)')+'  '+pesoS(nuevo)+'\n'+
+      _lbl(cm.note,cm.cpt)+'  '+pesoS(cm.imp)+'\n        ↓\n'+
+      _lbl(newNote.trim(),newCpt.trim())+'  '+pesoS(nuevo)+'\n'+
       efectivoTxt+'\n'+
       'OJO: se corrige ESE día. Como el crédito es un saldo encadenado, el saldo\n'+
       'de crédito de ese día y de todos los siguientes se recalcula.\n\n'+
       'Si lo que querés es registrar un cobro o un fiado nuevo, cerrá esto y usá\n'+
       '"Ajustar hoy", que no toca los días anteriores.\n\n¿Confirmás la corrección?'))return;
   cm.note=newNote.trim();
+  if(newCpt.trim())cm.cpt=newCpt.trim();else delete cm.cpt;
   cm.imp=nuevo;
   if(iMov>=0){
-    d.movs[iMov]={...d.movs[iMov],imp:Math.round(-nuevo*100)/100,cpt:_cptCredito(nuevo,cm.note)};
+    d.movs[iMov]={...d.movs[iMov],imp:Math.round(-nuevo*100)/100,cpt:_cptCredito(nuevo,cm.note,cm.cpt)};
     _recalcTotalesDia(d);
   }
   d.credAdj=Math.round((d.credMovs||[]).reduce((s,x)=>s+x.imp,0)*100)/100;
@@ -2443,7 +2467,7 @@ function renderCreditDetailModal(hastaIso){
       const entries=creditNoteEntries(x.note,hasta);
       const rows=entries.map(e=>`
         <div class="credmov">
-          <span class="credfecha">${e.date}</span>
+          <span class="credfecha">${e.date}${e.cpt?` <span style="color:var(--ink3)">· ${esc(e.cpt)}</span>`:''}</span>
           <span style="display:flex;align-items:center;gap:2px">
             <span class="credimp ${e.imp>=0?'pos':'neg'}">${pesoS(e.imp)}</span>
             <button class="rowact" title="Corregir este ajuste en su fecha (${e.date}) — modifica los saldos de ese día en adelante" onclick="editCreditNoteEntry('${e.iso}',${e.idx})">✎</button>
@@ -2555,10 +2579,10 @@ function corregirCreditoSinMov(iso,idx){
   const imp=Math.round(-cm.imp*100)/100;
   const nombre=(cm.note||'').trim()||'(sin nombre)';
   if(!confirm('Agregar al día '+d.date+' el movimiento de caja que falta:\n\n'+
-    (imp<0?'Egreso':'Ingreso')+' de '+pesoS(imp)+'  ·  '+_cptCredito(cm.imp,nombre)+'\n\n'+
+    (imp<0?'Egreso':'Ingreso')+' de '+pesoS(imp)+'  ·  '+_cptCredito(cm.imp,nombre,cm.cpt)+'\n\n'+
     'Esto NO cambia el saldo final (el crédito ya lo estaba sumando), pero corrige\n'+
     'el efectivo y hace que el arqueo cierre.\n\n¿Confirmás?'))return;
-  d.movs.push({imp,cpt:_cptCredito(cm.imp,nombre),ref:'Crédito'});
+  d.movs.push({imp,cpt:_cptCredito(cm.imp,nombre,cm.cpt),ref:'Crédito'});
   d.ing=Math.round(d.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
   d.egr=Math.round(d.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
   d.nmov=d.movs.length;
@@ -2865,7 +2889,14 @@ function nuevoDiaFecha(){
   return chocaHoy?nextDate():hoy;
 }
 function blankMov(){return{type:'in',amt:'',cpt:'',ref:''}}
-function blankCredMov(){return{type:'in',amt:'',note:''}}
+// `note` = de quién es (la clave por la que se agrupa la cuenta corriente:
+// deudor/acreedor) y `cpt` = por qué (concepto libre, opcional). Van separados
+// a propósito, pedido explícito del usuario ("que me deje cargar un nombre que
+// después ya quede precargado y en otro casillero un concepto ... para que el
+// sistema mismo agrupe todo por persona"): antes el nombre y el motivo caían en
+// el mismo campo, así que "Juan Pérez" y "Juan Pérez adelanto" quedaban como
+// dos personas distintas en el desglose.
+function blankCredMov(){return{type:'in',amt:'',note:'',cpt:''}}
 function blankFisMov(){return{type:'in',amt:''}}
 function openEditor(existing){
   editIso=existing?existing.iso:null;
@@ -2875,8 +2906,8 @@ function openEditor(existing){
     // Compat: días guardados con un solo ajuste (credAdj, sin credMovs) se muestran
     // como una fila editable ya cargada, en vez de perder ese valor.
     const credMovs=(existing.credMovs&&existing.credMovs.length)
-      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||'',_preexisting:true}))
-      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:'',_preexisting:true}]:[]);
+      ?existing.credMovs.map(cm=>({type:cm.imp<0?'out':'in',amt:Math.abs(cm.imp),note:cm.note||'',cpt:cm.cpt||'',_preexisting:true}))
+      :(existing.credAdj?[{type:existing.credAdj<0?'out':'in',amt:Math.abs(existing.credAdj),note:'',cpt:'',_preexisting:true}]:[]);
     // Compat: días guardados con un solo total (fis, sin caja itemizada) se muestran
     // como una parte editable ya cargada, en vez de perder ese valor.
     const fisMovs=(existing.caja&&existing.caja.length)
@@ -3125,19 +3156,36 @@ function renderCredMovRows(){
   // despliegue") — tocar "Ver" + la clave correcta las despliega todas juntas.
   const maskedIdx=[],visibleIdx=[];
   rows.forEach((cm,i)=>((cm._preexisting&&!credRowsUnlocked)?maskedIdx:visibleIdx).push(i));
+  // Autocompletado del nombre con las personas que ya tienen cuenta en esta caja
+  // (pedido explícito: "que me deje cargar un nombre que después ya quede
+  // precargado ... para que el sistema mismo agrupe todo por persona") — sin
+  // esto, tipear el mismo nombre con una letra distinta abre una cuenta nueva.
+  // Va detrás de la MISMA clave que el resto del detalle de créditos: la lista
+  // de nombres es justamente lo que el candado protege, así que solo se puebla
+  // con credRowsUnlocked en true (por eso la línea del candado ahora se muestra
+  // también cuando no hay filas tapadas pero sí nombres guardados).
+  const nombresCaja=creditNotesBreakdown(activeContextId,CUR).map(x=>x.note).filter(n=>n&&n!=='(sin nombre)');
+  const nombresGuardados=credRowsUnlocked?nombresCaja:[];
+  const hayNombres=nombresCaja.length>0;
   let html='';
-  if(maskedIdx.length){
+  if(maskedIdx.length||(!credRowsUnlocked&&hayNombres)){
+    const txt=maskedIdx.length
+      ? `${maskedIdx.length} ajuste${maskedIdx.length===1?'':'s'} de crédito oculto${maskedIdx.length===1?'':'s'}`
+      : 'Nombres guardados ocultos — desbloqueá para autocompletar';
     html+=`<div class="mvrow-locked" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 14px;margin-bottom:8px">
-      <span style="display:flex;align-items:center;gap:8px;color:var(--ink3);font-size:13px">${ic('lock',14)} ${maskedIdx.length} ajuste${maskedIdx.length===1?'':'s'} de crédito oculto${maskedIdx.length===1?'':'s'}</span>
+      <span style="display:flex;align-items:center;gap:8px;color:var(--ink3);font-size:13px">${ic('lock',14)} ${txt}</span>
       <button type="button" onclick="unlockCreditRows()" style="background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;flex-shrink:0">${ic('lock',12)} Ver</button>
     </div>`;
   }
+  if(nombresGuardados.length)
+    html+=`<datalist id="credNombres">${nombresGuardados.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`;
   html+=visibleIdx.map(i=>{
     const cm=rows[i];
     return `
-    <div class="mvrow" data-i="${i}" style="grid-template-columns:132px 1.6fr 1fr auto;margin-bottom:8px">
+    <div class="mvrow" data-i="${i}" style="grid-template-columns:132px 1.3fr 1.3fr 1fr auto;margin-bottom:8px">
       <div class="tgl"><button type="button" class="in ${cm.type==='in'?'on':''}" data-t="in" title="Le fiás: el crédito sube y SALE plata de la caja">Otorgo</button><button type="button" class="out ${cm.type==='out'?'on':''}" data-t="out" title="Te paga: el crédito baja y ENTRA plata a la caja">Cobro</button></div>
-      <input class="note" placeholder="De quién es — ej: Juan Pérez" value="${esc(cm.note||'')}">
+      <input class="note"${nombresGuardados.length?' list="credNombres"':''} placeholder="De quién es — ej: Juan Pérez" title="Nombre de la persona: es lo que agrupa la cuenta corriente" value="${esc(cm.note||'')}">
+      <input class="cptcred" placeholder="Concepto — ej: adelanto" title="Por qué es el crédito (opcional). No afecta el agrupamiento por persona." value="${esc(cm.cpt||'')}">
       <input class="amt amount" inputmode="decimal" placeholder="0" value="${cm.amt}">
       <div style="display:flex;gap:6px">
         <button class="valebtn" type="button" title="Imprimir vale de caja">${ic('printer',14)}</button>
@@ -3151,6 +3199,8 @@ function renderCredMovRows(){
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.credMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcCredit()});
     const noteInput=row.querySelector('input.note');
     if(noteInput)noteInput.oninput=e=>{edState.credMovs[i].note=e.target.value};
+    const cptInput=row.querySelector('input.cptcred');
+    if(cptInput)cptInput.oninput=e=>{edState.credMovs[i].cpt=e.target.value};
     const amtInput=row.querySelector('input.amount');
     if(amtInput)amtInput.oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
     row.querySelector('.valebtn').onclick=()=>printVale(i);
@@ -3236,7 +3286,7 @@ function saveDay(){
   const cajaParts=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:Math.round((fm.type==='out'?-1:1)*Math.abs(a)*100)/100}).filter(v=>v!=null&&v!==0);
   const fis=cajaParts.length?Math.round(cajaParts.reduce((s,v)=>s+v,0)*100)/100:null;
   const chq=num(document.getElementById('f_chq').value);
-  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return{imp:Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100,note:(cm.note||'').trim()}}).filter(Boolean);
+  const credMovs=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;const o={imp:Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100,note:(cm.note||'').trim()};const c=(cm.cpt||'').trim();if(c)o.cpt=c;return o}).filter(Boolean);
   const credAdj=Math.round(credMovs.reduce((s,cm)=>s+cm.imp,0)*100)/100;
   // Créditos NUEVOS (recién tipeados en esta sesión, no _preexisting) que
   // suman al saldo — "otorgar un crédito" — para el auto-imprimir del vale de
@@ -3265,12 +3315,12 @@ function saveDay(){
     if(cm._preexisting)return false;
     const a=num(cm.amt);
     return a!=null&&a!==0&&(cm.note||'').trim();
-  }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim()}));
+  }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim(),cpt:(cm.cpt||'').trim()}));
   const sinContrapartida=credNuevos.filter(cn=>!c.movs.some(m=>Math.abs(m.imp+cn.imp)<0.005));
   if(sinContrapartida.length){
     sinContrapartida.forEach(cn=>{
       c.movs.push({imp:Math.round(-cn.imp*100)/100,
-        cpt:_cptCredito(cn.imp,cn.note),ref:'Crédito'});
+        cpt:_cptCredito(cn.imp,cn.note,cn.cpt),ref:'Crédito'});
     });
     c.ing=Math.round(c.movs.filter(m=>m.imp>0).reduce((s,m)=>s+m.imp,0)*100)/100;
     c.egr=Math.round(c.movs.filter(m=>m.imp<0).reduce((s,m)=>s+m.imp,0)*100)/100;
@@ -3313,7 +3363,7 @@ function saveDay(){
     // se cargó más de uno en el mismo guardado (caso raro), el resto se
     // puede imprimir después reabriendo el día y usando el 🖨 de cada fila.
     const g=newGrants[0];
-    setTimeout(()=>{printValeFor(num(g.amt),(g.note||'').trim(),g.type,iso);setTimeout(()=>window.print(),150)},120);
+    setTimeout(()=>{printValeFor(num(g.amt),(g.note||'').trim(),g.type,iso,(g.cpt||'').trim());setTimeout(()=>window.print(),150)},120);
   }else{
     setTimeout(()=>openDayIso(iso),120);
   }
