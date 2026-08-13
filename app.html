@@ -283,6 +283,13 @@ tbody tr:last-child td{border-bottom:none}
 .credcard .credmov:last-child{border-bottom:none}
 .credcard .credmov .credfecha{font-family:'Roboto Mono';font-size:12px;color:var(--ink3)}
 .credcard .credmov .credimp{font-family:'Roboto Mono';min-width:92px;text-align:right}
+/* Secciones "Deudores" / "Acreedores" del detalle de créditos: el signo del
+   saldo por persona ya distingue quién debe de a quién se le debe, pero
+   mezclados en una sola lista esa diferencia se pierde de vista. */
+.credsec{margin-bottom:16px}
+.credsec .credsechead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:0 2px 8px;font-size:13px;color:var(--ink2)}
+.credsec .credsechead b{font-size:13.5px;color:var(--ink)}
+.credsec .credsecayuda{font-size:11.5px;color:var(--ink3)}
 .credtotal{display:flex;align-items:center;justify-content:space-between;padding:12px 13px;border:1px solid var(--gold);border-radius:11px;background:var(--accent-soft);font-size:14px}
 .credtotal .credtot{font-family:'Roboto Mono';font-weight:800;font-size:16px}
 .cajachips{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
@@ -2420,11 +2427,19 @@ function renderCreditDetailModal(hastaIso){
   const sinMov=creditosSinContrapartida(activeContextId,CUR);
   const items=creditNotesBreakdown(activeContextId,CUR,hasta);
   const total=Math.round(items.reduce((s,x)=>s+x.total,0)*100)/100;
+  // Deudores vs acreedores (pedido explícito: "sería deudor o acreedor").
+  // El signo del saldo por persona ya lo dice — positivo = se llevó plata y
+  // todavía la debe; negativo = puso de más o pagó por adelantado, así que la
+  // sociedad le debe a esa persona. Antes salían todos mezclados en una sola
+  // lista ordenada por monto, que es justo donde se pierde esa distinción.
+  const deudores=items.filter(x=>x.total>0);
+  const acreedores=items.filter(x=>x.total<0);
+  const totDeu=Math.round(deudores.reduce((s,x)=>s+x.total,0)*100)/100;
+  const totAcr=Math.round(acreedores.reduce((s,x)=>s+x.total,0)*100)/100;
   // Cada nombre/concepto muestra su total (como antes) y, debajo, cada ajuste
   // individual que lo compone con ✎/🗑 (pedido explícito del usuario: "aun no
   // puedo editar lo oculto" — este modal era de solo lectura hasta ahora).
-  const body=items.length
-    ?items.map(x=>{
+  const tarjeta=(x)=>{
       const entries=creditNoteEntries(x.note,hasta);
       const rows=entries.map(e=>`
         <div class="credmov">
@@ -2450,8 +2465,19 @@ function renderCreditDetailModal(hastaIso){
         </div>
         <div class="credmovs">${rows}</div>
       </div>`;
-    }).join('')
-    :`<div class="empty-state">Sin créditos cargados${hastaLabel?' hasta el '+hastaLabel:' en esta caja'}</div>`;
+  };
+  const seccion=(titulo,ayuda,lista,tot,cls)=>lista.length?`
+    <div class="credsec">
+      <div class="credsechead">
+        <span><b>${titulo}</b> <span class="credsecayuda">${ayuda}</span></span>
+        <span class="credtot ${cls}">${pesoS(tot)}</span>
+      </div>
+      ${lista.map(tarjeta).join('')}
+    </div>`:'';
+  const body=items.length
+    ? seccion('Deudores','le deben a la sociedad',deudores,totDeu,'pos')
+      +seccion('Acreedores','la sociedad les debe',acreedores,totAcr,'neg')
+    : `<div class="empty-state">Sin créditos cargados${hastaLabel?' hasta el '+hastaLabel:' en esta caja'}</div>`;
   document.getElementById('modal').innerHTML=`
     <div class="mtop"><div class="dd">${ic('lock',24)}</div>
       <div><h3>Detalle de créditos a cobrar</h3><div class="msub">${esc(ctxLabel(ctx))} · ${sym==='$'?'$ Pesos':'US$ Dólares'} · ${hastaLabel?('saldo al '+hastaLabel):'por quién está compuesto el saldo actual'}</div></div>
@@ -3190,6 +3216,22 @@ function saveDay(){
   if(!iso){err.textContent='Elegí una fecha.';return}
   const clash=days.find(d=>d.iso===iso&&!d.empty&&!(editIso&&d.iso===editIso));
   if(clash){err.textContent='Ya existe un día registrado con esa fecha ('+clash.date+').';return}
+  // El nombre del crédito es OBLIGATORIO (pedido explícito: "que tengan un
+  // nombre cada vez que entro o devuelven para poder agruparlo por persona").
+  // Sin nombre el ajuste caía en "(sin nombre)" y se mezclaba con el de
+  // cualquier otro; peor todavía, la contrapartida automática de efectivo
+  // exige nombre para generarse, así que un crédito anónimo se guardaba SIN
+  // su movimiento de caja y descuadraba el arqueo en silencio.
+  const credSinNombre=(edState.credMovs||[]).filter(cm=>{
+    const a=num(cm.amt);
+    return a!=null&&a!==0&&!(cm.note||'').trim();
+  }).length;
+  if(credSinNombre){
+    err.textContent='Poné a nombre de quién está '+(credSinNombre===1?'el crédito':'cada uno de los '+credSinNombre+' créditos')+'. Sin nombre no se puede agrupar la cuenta por persona.';
+    const vacio=document.querySelector('#credMvList .mvrow input.note:placeholder-shown');
+    if(vacio)vacio.focus();
+    return;
+  }
   // Se permite guardar días SIN movimientos: el saldo final arrastra el saldo inicial.
   const cajaParts=(edState.fisMovs||[]).map(fm=>{const a=num(fm.amt);return a==null?null:Math.round((fm.type==='out'?-1:1)*Math.abs(a)*100)/100}).filter(v=>v!=null&&v!==0);
   const fis=cajaParts.length?Math.round(cajaParts.reduce((s,v)=>s+v,0)*100)/100:null;
