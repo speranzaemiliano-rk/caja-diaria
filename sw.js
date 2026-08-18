@@ -1,8 +1,26 @@
-const CACHE = 'caja-diaria-v101';
+const CACHE = 'caja-diaria-v102';
 const ASSETS = ['./', './index.html', './app.html', './manifest.json', './icon-192.png', './icon-512.png', './biletes.avif', './logo.svg'];
 
+// El SDK de Firebase se precachea aparte. Desde que el candado exige la cuenta
+// dueña para abrir la caja (no alcanza con los 4 dígitos), si estos scripts no
+// cargan no hay forma de verificar la sesión y el dueño se queda afuera de sus
+// propios datos. Con esto, una vez que entró online alguna vez, la verificación
+// sigue andando sin internet: Firebase Auth guarda la sesión en el dispositivo
+// y la restaura sin pegarle a la red, lo único que faltaba era el script.
+// gstatic responde con Access-Control-Allow-Origin:* así que cache.add() (que
+// pide en modo cors) puede guardarlos.
+// Van con allSettled y APARTE del addAll de ASSETS a propósito: si gstatic está
+// caído, la instalación del service worker tiene que seguir funcionando igual.
+const EXTERNOS = [
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js'
+];
+
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(CACHE).then(c =>
+    c.addAll(ASSETS).then(() => Promise.allSettled(EXTERNOS.map(u => c.add(u))))
+  ));
   self.skipWaiting();
 });
 
@@ -35,8 +53,13 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
+  // ignoreVary: los scripts de Firebase vienen con `vary: Accept-Encoding`, así
+  // que sin esto un Accept-Encoding distinto entre el cache.add() del install y
+  // el <script src> de la página daría un fallo de match — justo el caso en que
+  // hace falta el cacheado, sin conexión. Los assets propios no varían, para
+  // ellos es indistinto.
   e.respondWith(
-    caches.match(e.request).then(cached => {
+    caches.match(e.request, { ignoreVary: true }).then(cached => {
       const fetchPromise = fetch(e.request).then(res => {
         if (res && res.status === 200) {
           const copy = res.clone();
