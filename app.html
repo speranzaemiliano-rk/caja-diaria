@@ -593,18 +593,42 @@ tbody tr:hover{background:var(--panel2)}
 </style>
 </head>
 <body>
-<!-- ── Candado de 4 dígitos ──────────────────────────────────────────────
+<!-- ── Candado: cuenta Mess + 4 dígitos ──────────────────────────────────
      Es una CAPA ENCIMA de la app: no cambia nada del arranque, sólo tapa la
-     pantalla hasta que se ingresa el código. Así no puede romper la carga. -->
-<div id="pinGate" style="position:fixed;inset:0;z-index:99999;background:#0A0D14;display:none;align-items:center;justify-content:center;padding:24px">
+     pantalla hasta que se verifica quién entra. Así no puede romper la carga.
+     Son DOS condiciones, no una: la caja queda vinculada a una única cuenta
+     Mess (pedido explícito: "que sólo ingrese un usuario por más que tenga la
+     clave") y los 4 dígitos son el segundo factor local. Tener el código sin
+     la cuenta dueña no abre nada. Tres paneles excluyentes: espera mientras se
+     resuelve la sesión, cuenta cuando falta la correcta, y código cuando ya
+     está verificada. -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:99999;background:#0A0D14;display:none;align-items:center;justify-content:center;padding:24px;overflow-y:auto">
   <div style="width:100%;max-width:320px;text-align:center">
     <img src="logo.svg" alt="" style="width:72px;height:72px;margin:0 auto 18px;display:block">
     <div id="pinTit" style="font-family:ui-serif,'Iowan Old Style',Palatino,Georgia,serif;font-size:20px;font-weight:600;color:#ECEAF6;margin-bottom:6px">Ingresá tu código</div>
     <div id="pinSub" style="font-size:13px;color:#9AA0B8;margin-bottom:22px;line-height:1.5;max-width:100%;overflow-wrap:break-word">4 dígitos para abrir la caja</div>
-    <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
-           style="width:100%;max-width:200px;text-align:center;font-size:30px;letter-spacing:16px;text-indent:16px;padding:12px 0;border-radius:12px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none">
-    <div id="pinErr" style="color:#ff6b6b;font-size:13px;min-height:20px;margin-top:10px"></div>
-    <button id="pinBtn" style="width:100%;max-width:200px;margin-top:8px;padding:12px;border:none;border-radius:12px;background:linear-gradient(90deg,#7C5CFF,#6C7BFF);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Entrar</button>
+
+    <div id="gateWait" style="display:none;color:#9AA0B8;font-size:13.5px;padding:10px 0">Verificando tu cuenta…</div>
+
+    <div id="pinPane" style="display:none">
+      <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
+             style="width:100%;max-width:200px;text-align:center;font-size:30px;letter-spacing:16px;text-indent:16px;padding:12px 0;border-radius:12px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none">
+      <div id="pinErr" style="color:#ff6b6b;font-size:13px;min-height:20px;margin-top:10px"></div>
+      <button id="pinBtn" style="width:100%;max-width:200px;margin-top:8px;padding:12px;border:none;border-radius:12px;background:linear-gradient(90deg,#7C5CFF,#6C7BFF);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Entrar</button>
+      <div id="pinQuien" style="font-size:12px;color:#6f6c8a;margin-top:14px;overflow-wrap:break-word"></div>
+    </div>
+
+    <div id="gatePane" style="display:none;text-align:left">
+      <input id="gateMail" type="email" autocomplete="username" placeholder="tu@correo.com"
+             style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none;font-family:inherit;font-size:14px;margin-bottom:8px">
+      <input id="gatePass" type="password" autocomplete="current-password" placeholder="Contraseña"
+             style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid #252D42;background:#141926;color:#ECEAF6;outline:none;font-family:inherit;font-size:14px">
+      <div id="gateErr" style="color:#ff6b6b;font-size:13px;min-height:20px;margin-top:8px;overflow-wrap:break-word"></div>
+      <button id="gateBtn" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(90deg,#7C5CFF,#6C7BFF);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Entrar</button>
+      <button id="gateGoogle" style="width:100%;margin-top:8px;padding:11px;border:1px solid #252D42;border-radius:12px;background:none;color:#ECEAF6;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Entrar con Google</button>
+      <div id="gateExtra" style="text-align:center;margin-top:12px"></div>
+    </div>
+
     <div style="margin-top:18px"><a href="../mi-app/" style="color:#6f6c8a;font-size:12.5px;text-decoration:none">← Volver a Mess</a></div>
   </div>
 </div>
@@ -4162,7 +4186,13 @@ function startSync(){
         // OJO: no se marca "resuelta" acá si hay usuario — conectarCaja todavía tiene
         // que leer la base, y eso puede colgarse. Se resuelve en _marcarSincro (éxito)
         // o en el corte/_marcarErrorNube (fallo). El corte sigue armado a propósito.
-        if(u){_nubeError='';conectarCaja(u).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_marcarErrorNube(e)})}
+        // Promise.resolve().then(...) en vez de llamar derecho: conectarCaja abre
+        // la base de forma sincrónica (firebase.database(), _db.ref(...)), así que
+        // si eso tira, el .catch de abajo no lo agarra y la excepción se lleva
+        // puesta la cadena de callbacks de onAuthStateChanged — incluido el que
+        // vuelve a poner el candado si cambia la sesión. Envolviéndolo, cualquier
+        // fallo sincrónico llega como rechazo y no rompe a los demás.
+        if(u){_nubeError='';Promise.resolve().then(()=>conectarCaja(u)).catch(e=>{setSyncBadge('Sincronización con error: '+((e&&e.message)||e));_marcarErrorNube(e)})}
         else{_user=null;_syncReady=false;_ref=null;_nubeResuelta=true;clearTimeout(_topeNubeTimer);setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');_pintarEstadoNube()}
         res();
       });
@@ -4184,6 +4214,19 @@ function abrirCuenta(){
         <div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13.5px">
           Conectado como <b>${esc(u.email||'—')}</b>
         </div>
+        ${(()=>{const o=ownerGuardado();
+          if(o&&o.uid===u.uid)return `<div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
+            ${ic('lock',14)} <b>Esta caja se abre sólo con esta cuenta.</b> Aunque alguien tenga el código de 4 dígitos, sin tu cuenta no entra.
+            <div style="margin-top:10px"><button class="btn-ghost" onclick="desvincularCaja()">Desvincular esta caja</button></div>
+          </div>`;
+          if(o)return `<div style="padding:12px 14px;border:1px solid var(--red-dim,var(--red));background:var(--red-bg);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
+            Esta caja está vinculada a <b>${esc(o.email||'otra cuenta')}</b>, no a la sesión actual.
+          </div>`;
+          return `<div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
+            Esta caja todavía no está vinculada a ninguna cuenta.
+            <div style="margin-top:10px"><button class="btn-ghost" onclick="vincularCaja()">Vincular a esta cuenta</button></div>
+          </div>`;
+        })()}
         <p style="font-size:13px;color:var(--ink3);line-height:1.6;margin:0 0 14px">
           Tus movimientos viajan a tu propia caja en la nube y sólo los ve tu cuenta.
           Es la misma cuenta del sistema de gestión.
@@ -4237,7 +4280,33 @@ function entrarGoogleMess(){
 function salirCuenta(){
   try{if(_ref)_ref.off()}catch(e){}
   _ref=null;_syncReady=false;_user=null;
-  firebase.auth().signOut().then(()=>{closeModal();toast('Sesión cerrada');setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess')});
+  firebase.auth().signOut().then(()=>{
+    closeModal();toast('Sesión cerrada');setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');
+    // Si la caja está vinculada, cerrar sesión vuelve a poner el candado: sin la
+    // cuenta dueña no se puede seguir mirando los movimientos.
+    _gateUser=null;
+    if(ownerGuardado())abrirCandado();
+  });
+}
+// Vincular / desvincular la caja de la cuenta. Desvincular sólo se ofrece desde
+// la sesión del propio dueño (ver el panel de la cuenta): si se pudiera hacer
+// desde afuera sería el desvío que este candado tiene que impedir.
+function vincularCaja(){
+  const u=firebase.auth().currentUser;
+  if(!u){toast('Entrá con tu cuenta primero');return}
+  if(!confirm('Vincular esta caja a '+(u.email||'esta cuenta')+'.\n\n'+
+    'A partir de ahora sólo se va a poder abrir con esta cuenta, aunque alguien\n'+
+    'tenga el código de 4 dígitos.\n\n¿Confirmás?'))return;
+  guardarOwner(u);toast('Caja vinculada a '+(u.email||'tu cuenta'));abrirCuenta();
+}
+function desvincularCaja(){
+  const u=firebase.auth().currentUser,o=ownerGuardado();
+  if(!o){toast('Esta caja no está vinculada');return}
+  if(!u||u.uid!==o.uid){toast('Sólo la cuenta dueña puede desvincular la caja');return}
+  if(!confirm('Desvincular esta caja de '+(o.email||'tu cuenta')+'.\n\n'+
+    'Después va a alcanzar con el código de 4 dígitos para abrirla, sin importar\n'+
+    'con qué cuenta se entre.\n\n¿Confirmás?'))return;
+  borrarOwner();toast('Caja desvinculada');abrirCuenta();
 }
 
 document.getElementById('syncBtn').onclick=abrirCuenta;
@@ -4365,11 +4434,50 @@ setTimeout(()=>{startSync().catch(e=>{
   _nubeArranco=true; _marcarErrorNube(e);
 })},300);
 
-/* ============ Candado de 4 dígitos ============
-   Guarda un hash del código, no el código. Es un candado de conveniencia: evita
-   que alguien que agarra el dispositivo desbloqueado abra la caja. No protege
-   contra alguien con conocimientos que revise el navegador — los movimientos
-   están en localStorage. Para eso está la cuenta, que es lo que protege la nube. */
+/* ============ Candado: cuenta dueña + 4 dígitos ============
+   Guarda un hash del código, no el código. Los 4 dígitos por sí solos son un
+   candado de conveniencia (evitan que alguien que agarra el dispositivo
+   desbloqueado abra la caja) y no protegen contra alguien con conocimientos que
+   revise el navegador: los movimientos están en localStorage.
+
+   Por eso, a pedido explícito del usuario ("necesito que sólo ingrese un
+   usuario por más que tenga la clave"), la caja además queda VINCULADA a una
+   única cuenta Mess. Para abrir hacen falta las dos cosas: estar con la sesión
+   de la cuenta dueña Y el código. Saber los 4 dígitos, sin esa cuenta, no abre.
+
+   Cómo se vincula: la primera vez que se entra con una sesión iniciada, esa
+   cuenta queda registrada como dueña (`caja_owner_v1`). De ahí en más cualquier
+   otra cuenta queda bloqueada en la puerta, con el mail del dueño a la vista
+   para saber con cuál hay que entrar.
+
+   Recuperación: la única forma de desvincular es desde la propia sesión del
+   dueño (menú de la cuenta), justamente para que no sea un desvío. Si se pierde
+   el acceso a la cuenta, se recupera la CUENTA (restablecer contraseña en
+   Mess), que es la razón de atarlo a una cuenta y no al dispositivo.
+
+   Sin conexión: Firebase Auth guarda la sesión en el dispositivo y la restaura
+   sin pegarle a la red, así que una vez que se entró online el candado sigue
+   verificando offline. Lo único que hace falta bajar es el SDK, y por eso el
+   service worker lo precachea (ver EXTERNOS en sw.js). Si aun así no se puede
+   verificar, la puerta NO se abre: se ofrece reintentar. Dejar pasar con el
+   código solo cuando falla la verificación sería exactamente el desvío que este
+   candado tiene que impedir (bastaría con poner el celular en modo avión). */
+const OWNER_KEY='caja_owner_v1';
+function ownerGuardado(){try{return JSON.parse(localStorage.getItem(OWNER_KEY)||'null')}catch(e){return null}}
+function guardarOwner(u){try{localStorage.setItem(OWNER_KEY,JSON.stringify({uid:u.uid,email:u.email||'',at:Date.now()}))}catch(e){}}
+function borrarOwner(){try{localStorage.removeItem(OWNER_KEY)}catch(e){}}
+// Resuelve la sesión una sola vez y la cachea. Es un listener aparte del de
+// startSync() a propósito: el candado tiene que poder decidir aunque la
+// sincronización falle después al leer la base.
+let _authProm=null,_gateUser=null;
+function esperarAuth(){
+  if(_authProm)return _authProm;
+  _authProm=loadFirebase().then(()=>{
+    initFirebase();
+    return new Promise(res=>{const off=firebase.auth().onAuthStateChanged(u=>{off();res(u||null)})});
+  });
+  return _authProm;
+}
 const PIN_KEY='caja_pin_hash_v1';
 function _pinHash(txt){
   // SHA-256 si el navegador lo permite (https). Si no, un hash simple: no es
@@ -4382,30 +4490,137 @@ function _pinHash(txt){
   return Promise.resolve('s'+h);
 }
 function pinGuardado(){try{return localStorage.getItem(PIN_KEY)||''}catch(e){return ''}}
+function _gatePanel(cual){
+  ['gateWait','pinPane','gatePane'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display=(id===cual?'block':'none');
+  });
+}
+function _gateTexto(tit,sub){
+  document.getElementById('pinTit').textContent=tit;
+  document.getElementById('pinSub').textContent=sub;
+}
 function abrirCandado(){
   const g=document.getElementById('pinGate');if(!g)return;
-  const hay=!!pinGuardado();
-  document.getElementById('pinTit').textContent = hay?'Ingresá tu código':'Creá tu código';
-  document.getElementById('pinSub').textContent = hay?'4 dígitos para abrir la caja':'Elegí 4 dígitos. Te los pide al abrir la caja.';
-  document.getElementById('pinBtn').textContent = hay?'Entrar':'Guardar y entrar';
   g.style.display='flex';
+  _gatePanel('gateWait');
+  _gateTexto('Caja Diaria','Verificando con qué cuenta entrás…');
+  // Se relee currentUser en vez de usar lo que resolvió esperarAuth(): esa
+  // promesa está cacheada y devolvería la sesión de la primera vez, así que tras
+  // un cierre de sesión el candado se pintaría con el usuario viejo.
+  esperarAuth().then(()=>{
+    _gateUser=(window.firebase&&firebase.apps&&firebase.apps.length)?firebase.auth().currentUser:null;
+    _pintarCandado();
+  })
+    .catch(e=>{
+      _gateUser=null;
+      _gatePanel('gatePane');
+      _gateTexto('No se pudo verificar','La caja necesita confirmar tu cuenta Mess para abrirse y no hay conexión.');
+      document.getElementById('gateMail').style.display='none';
+      document.getElementById('gatePass').style.display='none';
+      document.getElementById('gateGoogle').style.display='none';
+      document.getElementById('gateErr').textContent=(e&&e.message)||'Sin conexión.';
+      const b=document.getElementById('gateBtn');
+      b.textContent='Reintentar';
+      b.onclick=()=>{_authProm=null;location.reload()};
+      document.getElementById('gateExtra').innerHTML='';
+    });
+}
+// Decide qué panel mostrar según quién está en sesión contra el dueño registrado.
+function _pintarCandado(){
+  const dueño=ownerGuardado(),u=_gateUser;
+  const mail=document.getElementById('gateMail'),pass=document.getElementById('gatePass'),
+        goo=document.getElementById('gateGoogle'),btn=document.getElementById('gateBtn'),
+        extra=document.getElementById('gateExtra'),err=document.getElementById('gateErr');
+  // Caso bloqueado: hay dueño y no es quien está en sesión (o no hay sesión).
+  if(dueño&&(!u||u.uid!==dueño.uid)){
+    _gatePanel('gatePane');
+    _gateTexto('Esta caja es de otra cuenta',
+      u?('Estás con '+(u.email||'otra cuenta')+'. Entrá con '+(dueño.email||'la cuenta dueña')+' para abrirla.')
+       :('Entrá con '+(dueño.email||'la cuenta dueña')+' para abrir la caja.'));
+    mail.style.display='';pass.style.display='';goo.style.display='';
+    if(!mail.value&&dueño.email)mail.value=dueño.email;
+    err.textContent='';
+    btn.textContent='Entrar';btn.onclick=_gateEntrar;
+    extra.innerHTML=u
+      ?'<a href="javascript:void(0)" id="gateSalir" style="color:#6f6c8a;font-size:12.5px;text-decoration:none">Cerrar la sesión de '+esc(u.email||'esta cuenta')+'</a>'
+      :'';
+    const s=document.getElementById('gateSalir');
+    if(s)s.onclick=()=>{firebase.auth().signOut().then(()=>{_authProm=null;_gateUser=null;_pintarCandado()})};
+    return;
+  }
+  // Caso sin vincular y sin sesión: hay que elegir dueño antes de poder entrar.
+  if(!dueño&&!u){
+    _gatePanel('gatePane');
+    _gateTexto('Vinculá tu cuenta','Esta caja se abre sólo con tu cuenta Mess. Entrá una vez y queda vinculada a vos.');
+    mail.style.display='';pass.style.display='';goo.style.display='';
+    err.textContent='';
+    btn.textContent='Entrar y vincular';btn.onclick=_gateEntrar;
+    extra.innerHTML='';
+    return;
+  }
+  // Verificado: queda el código.
+  const hay=!!pinGuardado();
+  _gatePanel('pinPane');
+  _gateTexto(hay?'Ingresá tu código':'Creá tu código',
+             hay?'4 dígitos para abrir la caja':'Elegí 4 dígitos. Te los pide al abrir la caja.');
+  document.getElementById('pinBtn').textContent=hay?'Entrar':'Guardar y entrar';
+  document.getElementById('pinQuien').textContent=dueño
+    ?('Caja de '+(dueño.email||'tu cuenta'))
+    :('Se va a vincular a '+((u&&u.email)||'tu cuenta'));
   setTimeout(()=>{const i=document.getElementById('pinInput');if(i)i.focus()},150);
+}
+function _gateEntrar(){
+  const em=(document.getElementById('gateMail').value||'').trim();
+  const pw=document.getElementById('gatePass').value||'';
+  const err=document.getElementById('gateErr');
+  if(!em||!pw){err.textContent='Completá correo y contraseña.';return}
+  err.textContent='Entrando…';
+  firebase.auth().signInWithEmailAndPassword(em,pw)
+    .then(cr=>_gateTrasLogin(cr.user)).catch(e=>{err.textContent=_msgAuth(e)});
+}
+function _gateGoogle(){
+  const err=document.getElementById('gateErr');
+  firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
+    .then(cr=>_gateTrasLogin(cr.user)).catch(e=>{if(err)err.textContent=_msgAuth(e)});
+}
+// Tras un login desde la puerta: si hay dueño y no coincide, se rechaza acá
+// mismo (y se cierra esa sesión, para no dejar la caja de otro sincronizando).
+function _gateTrasLogin(u){
+  const dueño=ownerGuardado();
+  if(dueño&&u.uid!==dueño.uid){
+    return firebase.auth().signOut().then(()=>{
+      _gateUser=null;
+      document.getElementById('gateErr').textContent='Esa cuenta no es la dueña de esta caja. Entrá con '+(dueño.email||'la cuenta dueña')+'.';
+      document.getElementById('gatePass').value='';
+    });
+  }
+  _gateUser=u;
+  document.getElementById('gatePass').value='';
+  document.getElementById('gateErr').textContent='';
+  _pintarCandado();
+  return conectarCaja(u).catch(()=>{});
 }
 function _pinIntento(){
   const inp=document.getElementById('pinInput');
   const err=document.getElementById('pinErr');
   const v=(inp.value||'').trim();
   if(!/^[0-9]{4}$/.test(v)){err.textContent='Tienen que ser 4 números.';return}
+  // Recheque de la cuenta antes de abrir: el panel del código sólo se pinta
+  // verificado, pero entre que se pintó y se tipeó el código la sesión pudo
+  // cambiar (otra pestaña, un signOut). Sin esto, el código volvería a ser la
+  // única condición real.
+  const dueño=ownerGuardado();
+  if(dueño&&(!_gateUser||_gateUser.uid!==dueño.uid)){_pintarCandado();return}
+  if(!dueño&&!_gateUser){_pintarCandado();return}
   _pinHash(v).then(h=>{
     const guardado=pinGuardado();
-    if(!guardado){
-      try{localStorage.setItem(PIN_KEY,h)}catch(e){}
-      document.getElementById('pinGate').style.display='none';
-      toast('Código guardado');
-      return;
-    }
-    if(h===guardado){document.getElementById('pinGate').style.display='none';inp.value=''}
-    else{err.textContent='Código incorrecto.';inp.value='';inp.focus()}
+    if(guardado&&h!==guardado){err.textContent='Código incorrecto.';inp.value='';inp.focus();return}
+    if(!guardado){try{localStorage.setItem(PIN_KEY,h)}catch(e){}}
+    // Primera entrada con sesión: esta cuenta queda como dueña de la caja.
+    if(!dueño&&_gateUser){guardarOwner(_gateUser);toast('Caja vinculada a '+(_gateUser.email||'tu cuenta'))}
+    else if(!guardado)toast('Código guardado');
+    document.getElementById('pinGate').style.display='none';
+    inp.value='';err.textContent='';
   });
 }
 /* Cambiar el código: se pide el actual y después el nuevo. */
@@ -4423,7 +4638,20 @@ function cambiarPin(){
 (function(){
   const b=document.getElementById('pinBtn'); if(b)b.onclick=_pinIntento;
   const i=document.getElementById('pinInput'); if(i)i.addEventListener('keydown',e=>{if(e.key==='Enter')_pinIntento()});
+  const gg=document.getElementById('gateGoogle'); if(gg)gg.onclick=_gateGoogle;
+  const gp=document.getElementById('gatePass'); if(gp)gp.addEventListener('keydown',e=>{if(e.key==='Enter')_gateEntrar()});
+  const gm=document.getElementById('gateMail'); if(gm)gm.addEventListener('keydown',e=>{if(e.key==='Enter')_gateEntrar()});
   abrirCandado();
+  // Si la sesión cambia con la caja ya abierta (se cerró sesión en otra pestaña,
+  // entró otra cuenta), se vuelve a poner el candado. Sin esto, la verificación
+  // valdría sólo para el arranque y quedaría abierta el resto de la sesión.
+  esperarAuth().then(()=>{
+    firebase.auth().onAuthStateChanged(u=>{
+      _gateUser=u||null;
+      const dueño=ownerGuardado();
+      if(dueño&&(!u||u.uid!==dueño.uid)&&document.getElementById('pinGate').style.display==='none')abrirCandado();
+    });
+  }).catch(()=>{});
 })();
 
 </script>
