@@ -4214,17 +4214,17 @@ function abrirCuenta(){
         <div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13.5px">
           Conectado como <b>${esc(u.email||'—')}</b>
         </div>
-        ${(()=>{const o=ownerGuardado();
-          if(o&&o.uid===u.uid)return `<div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
-            ${ic('lock',14)} <b>Esta caja se abre sólo con esta cuenta.</b> Aunque alguien tenga el código de 4 dígitos, sin tu cuenta no entra.
-            <div style="margin-top:10px"><button class="btn-ghost" onclick="desvincularCaja()">Desvincular esta caja</button></div>
-          </div>`;
-          if(o)return `<div style="padding:12px 14px;border:1px solid var(--red-dim,var(--red));background:var(--red-bg);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
-            Esta caja está vinculada a <b>${esc(o.email||'otra cuenta')}</b>, no a la sesión actual.
+        ${(()=>{const hab=mailHabilitado();
+          if(!hab)return `<div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
+            Esta caja no tiene restricción de cuenta: la abre cualquiera que tenga el código.
           </div>`;
           return `<div style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6">
-            Esta caja todavía no está vinculada a ninguna cuenta.
-            <div style="margin-top:10px"><button class="btn-ghost" onclick="vincularCaja()">Vincular a esta cuenta</button></div>
+            ${ic('lock',14)} <b>Esta caja se abre únicamente con ${esc(hab)}</b>, en cualquier dispositivo.
+            Aunque alguien tenga el código de 4 dígitos, con otra cuenta no entra.
+            <div style="margin-top:8px;color:var(--ink3);font-size:12.5px">
+              La cuenta habilitada viaja con la app (${'CUENTAS_HABILITADAS'} en <code>app.html</code>), no se guarda en este equipo:
+              por eso vale igual en un celular recién estrenado. Para cambiarla hay que editar esa línea y publicar.
+            </div>
           </div>`;
         })()}
         <p style="font-size:13px;color:var(--ink3);line-height:1.6;margin:0 0 14px">
@@ -4282,32 +4282,16 @@ function salirCuenta(){
   _ref=null;_syncReady=false;_user=null;
   firebase.auth().signOut().then(()=>{
     closeModal();toast('Sesión cerrada');setSyncBadge('Sin sesión — tocá para entrar con tu cuenta Mess');
-    // Si la caja está vinculada, cerrar sesión vuelve a poner el candado: sin la
-    // cuenta dueña no se puede seguir mirando los movimientos.
+    // Cerrar sesión vuelve a poner el candado: sin cuenta identificada no se
+    // puede seguir mirando los movimientos.
     _gateUser=null;
-    if(ownerGuardado())abrirCandado();
+    abrirCandado();
   });
 }
-// Vincular / desvincular la caja de la cuenta. Desvincular sólo se ofrece desde
-// la sesión del propio dueño (ver el panel de la cuenta): si se pudiera hacer
-// desde afuera sería el desvío que este candado tiene que impedir.
-function vincularCaja(){
-  const u=firebase.auth().currentUser;
-  if(!u){toast('Entrá con tu cuenta primero');return}
-  if(!confirm('Vincular esta caja a '+(u.email||'esta cuenta')+'.\n\n'+
-    'A partir de ahora sólo se va a poder abrir con esta cuenta, aunque alguien\n'+
-    'tenga el código de 4 dígitos.\n\n¿Confirmás?'))return;
-  guardarOwner(u);toast('Caja vinculada a '+(u.email||'tu cuenta'));abrirCuenta();
-}
-function desvincularCaja(){
-  const u=firebase.auth().currentUser,o=ownerGuardado();
-  if(!o){toast('Esta caja no está vinculada');return}
-  if(!u||u.uid!==o.uid){toast('Sólo la cuenta dueña puede desvincular la caja');return}
-  if(!confirm('Desvincular esta caja de '+(o.email||'tu cuenta')+'.\n\n'+
-    'Después va a alcanzar con el código de 4 dígitos para abrirla, sin importar\n'+
-    'con qué cuenta se entre.\n\n¿Confirmás?'))return;
-  borrarOwner();toast('Caja desvinculada');abrirCuenta();
-}
+// No hay "vincular/desvincular" desde la app a propósito: la cuenta habilitada
+// se cambia editando CUENTAS_HABILITADAS y publicando. Si se pudiera cambiar
+// desde acá, volvería a ser algo que cualquiera con acceso al dispositivo puede
+// reescribir — el agujero que este candado vino a tapar.
 
 document.getElementById('syncBtn').onclick=abrirCuenta;
 
@@ -4462,10 +4446,58 @@ setTimeout(()=>{startSync().catch(e=>{
    verificar, la puerta NO se abre: se ofrece reintentar. Dejar pasar con el
    código solo cuando falla la verificación sería exactamente el desvío que este
    candado tiene que impedir (bastaría con poner el celular en modo avión). */
+/* ── Cuenta habilitada: viaja EN EL CÓDIGO, no en el dispositivo ──────────
+   Primera versión: el dueño se guardaba sólo en localStorage (`caja_owner_v1`)
+   y se vinculaba con la primera entrada. Eso NO alcanza y el usuario lo reportó
+   ("todavía me deja abrir con una cuenta que no es..."): localStorage es de cada
+   navegador, así que en otro celular, otro navegador o una ventana de incógnito
+   ese registro arranca vacío → no hay dueño → la caja se dejaba abrir y se
+   vinculaba a quien entrara. Y si la primera entrada de un equipo se hacía con
+   otra cuenta, quedaba vinculada a ésa en silencio.
+
+   Ahora la autoridad es esta lista, que se publica junto con el HTML y por lo
+   tanto vale IGUAL en todos los dispositivos, incluso en uno recién estrenado.
+   `caja_owner_v1` queda como dato informativo/segunda capa, ya no decide.
+
+   Para cambiar de cuenta hay que editar esta constante y publicar. Es a
+   propósito: si se pudiera cambiar desde la propia app, volvería a ser algo que
+   cualquiera con acceso al dispositivo puede reescribir, que es el agujero que
+   esto viene a tapar. Lista vacía = sin restricción de cuenta. */
+const CUENTAS_HABILITADAS=['speranza.emiliano@gmail.com'];
+// Gmail ignora los puntos del nombre y todo lo que venga después de un "+",
+// así que speranza.emiliano@ y speranzaemiliano@ son la MISMA casilla y las dos
+// tienen que entrar. Sin esto, tipear el mail con/sin punto dejaba afuera al
+// propio dueño.
+function _normMail(e){
+  const s=(e||'').trim().toLowerCase();
+  const i=s.lastIndexOf('@');
+  if(i<0)return s;
+  let loc=s.slice(0,i);const dom=s.slice(i+1);
+  const mas=loc.indexOf('+');if(mas>=0)loc=loc.slice(0,mas);
+  if(dom==='gmail.com'||dom==='googlemail.com')loc=loc.replace(/\./g,'');
+  return loc+'@'+dom;
+}
+function cuentaHabilitada(u){
+  if(!CUENTAS_HABILITADAS.length)return true;
+  if(!u)return false;
+  return CUENTAS_HABILITADAS.some(m=>_normMail(m)===_normMail(u.email));
+}
+function mailHabilitado(){return CUENTAS_HABILITADAS[0]||''}
 const OWNER_KEY='caja_owner_v1';
-function ownerGuardado(){try{return JSON.parse(localStorage.getItem(OWNER_KEY)||'null')}catch(e){return null}}
+function ownerGuardado(){
+  try{
+    const o=JSON.parse(localStorage.getItem(OWNER_KEY)||'null');
+    if(!o)return null;
+    // Un dueño local que NO está en la lista habilitada quedó de la versión
+    // anterior, donde se vinculaba solo con la primera entrada y podía atarse a
+    // la cuenta equivocada. Se descarta: si no, bloquearía al dueño verdadero en
+    // su propio equipo. La lista del código es la autoridad, esto es la segunda
+    // capa y no puede contradecirla.
+    if(CUENTAS_HABILITADAS.length&&!cuentaHabilitada(o)){try{localStorage.removeItem(OWNER_KEY)}catch(e){}return null}
+    return o;
+  }catch(e){return null}
+}
 function guardarOwner(u){try{localStorage.setItem(OWNER_KEY,JSON.stringify({uid:u.uid,email:u.email||'',at:Date.now()}))}catch(e){}}
-function borrarOwner(){try{localStorage.removeItem(OWNER_KEY)}catch(e){}}
 // Resuelve la sesión una sola vez y la cachea. Es un listener aparte del de
 // startSync() a propósito: el candado tiene que poder decidir aunque la
 // sincronización falle después al leer la base.
@@ -4531,14 +4563,20 @@ function _pintarCandado(){
   const mail=document.getElementById('gateMail'),pass=document.getElementById('gatePass'),
         goo=document.getElementById('gateGoogle'),btn=document.getElementById('gateBtn'),
         extra=document.getElementById('gateExtra'),err=document.getElementById('gateErr');
-  // Caso bloqueado: hay dueño y no es quien está en sesión (o no hay sesión).
-  if(dueño&&(!u||u.uid!==dueño.uid)){
+  // La lista del código manda sobre el registro local: es la única condición que
+  // vale igual en un dispositivo recién estrenado, donde localStorage arranca
+  // vacío. `dueño` sólo puede AGREGAR una restricción, nunca sacarla.
+  // Se exige sesión SIEMPRE (`!!u`): sin cuenta identificada no hay forma de
+  // saber quién está entrando, que es justamente lo que hay que resolver acá.
+  const permitido=!!u&&cuentaHabilitada(u)&&!(dueño&&u.uid!==dueño.uid);
+  if(!permitido){
+    const esperado=mailHabilitado()||(dueño&&dueño.email)||'la cuenta dueña';
     _gatePanel('gatePane');
-    _gateTexto('Esta caja es de otra cuenta',
-      u?('Estás con '+(u.email||'otra cuenta')+'. Entrá con '+(dueño.email||'la cuenta dueña')+' para abrirla.')
-       :('Entrá con '+(dueño.email||'la cuenta dueña')+' para abrir la caja.'));
+    _gateTexto(u?'Esta cuenta no puede abrir la caja':'Entrá con tu cuenta',
+      u?('Estás con '+(u.email||'otra cuenta')+'. Esta caja se abre únicamente con '+esperado+'.')
+       :('Esta caja se abre únicamente con '+esperado+'.'));
     mail.style.display='';pass.style.display='';goo.style.display='';
-    if(!mail.value&&dueño.email)mail.value=dueño.email;
+    if(!mail.value&&esperado.indexOf('@')>=0)mail.value=esperado;
     err.textContent='';
     btn.textContent='Entrar';btn.onclick=_gateEntrar;
     extra.innerHTML=u
@@ -4546,16 +4584,6 @@ function _pintarCandado(){
       :'';
     const s=document.getElementById('gateSalir');
     if(s)s.onclick=()=>{firebase.auth().signOut().then(()=>{_authProm=null;_gateUser=null;_pintarCandado()})};
-    return;
-  }
-  // Caso sin vincular y sin sesión: hay que elegir dueño antes de poder entrar.
-  if(!dueño&&!u){
-    _gatePanel('gatePane');
-    _gateTexto('Vinculá tu cuenta','Esta caja se abre sólo con tu cuenta Mess. Entrá una vez y queda vinculada a vos.');
-    mail.style.display='';pass.style.display='';goo.style.display='';
-    err.textContent='';
-    btn.textContent='Entrar y vincular';btn.onclick=_gateEntrar;
-    extra.innerHTML='';
     return;
   }
   // Verificado: queda el código.
@@ -4583,14 +4611,16 @@ function _gateGoogle(){
   firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
     .then(cr=>_gateTrasLogin(cr.user)).catch(e=>{if(err)err.textContent=_msgAuth(e)});
 }
-// Tras un login desde la puerta: si hay dueño y no coincide, se rechaza acá
-// mismo (y se cierra esa sesión, para no dejar la caja de otro sincronizando).
+// Tras un login desde la puerta: si la cuenta no está habilitada (o no coincide
+// con el dueño registrado en este equipo) se rechaza acá mismo y se le cierra la
+// sesión, para no dejar la caja de otro sincronizando contra este dispositivo.
 function _gateTrasLogin(u){
   const dueño=ownerGuardado();
-  if(dueño&&u.uid!==dueño.uid){
+  if(!cuentaHabilitada(u)||(dueño&&u.uid!==dueño.uid)){
+    const esperado=mailHabilitado()||(dueño&&dueño.email)||'la cuenta dueña';
     return firebase.auth().signOut().then(()=>{
       _gateUser=null;
-      document.getElementById('gateErr').textContent='Esa cuenta no es la dueña de esta caja. Entrá con '+(dueño.email||'la cuenta dueña')+'.';
+      document.getElementById('gateErr').textContent='Con esa cuenta no se puede abrir esta caja. Entrá con '+esperado+'.';
       document.getElementById('gatePass').value='';
     });
   }
@@ -4610,14 +4640,15 @@ function _pinIntento(){
   // cambiar (otra pestaña, un signOut). Sin esto, el código volvería a ser la
   // única condición real.
   const dueño=ownerGuardado();
-  if(dueño&&(!_gateUser||_gateUser.uid!==dueño.uid)){_pintarCandado();return}
-  if(!dueño&&!_gateUser){_pintarCandado();return}
+  if(!_gateUser||!cuentaHabilitada(_gateUser)||(dueño&&_gateUser.uid!==dueño.uid)){_pintarCandado();return}
   _pinHash(v).then(h=>{
     const guardado=pinGuardado();
     if(guardado&&h!==guardado){err.textContent='Código incorrecto.';inp.value='';inp.focus();return}
     if(!guardado){try{localStorage.setItem(PIN_KEY,h)}catch(e){}}
-    // Primera entrada con sesión: esta cuenta queda como dueña de la caja.
-    if(!dueño&&_gateUser){guardarOwner(_gateUser);toast('Caja vinculada a '+(_gateUser.email||'tu cuenta'))}
+    // Se deja registrada la cuenta en este equipo. Ya no es lo que decide (eso
+    // lo hace CUENTAS_HABILITADAS), pero sirve de segunda capa y para mostrar
+    // en el modal de la cuenta con qué caja está trabajando este dispositivo.
+    if(!dueño)guardarOwner(_gateUser);
     else if(!guardado)toast('Código guardado');
     document.getElementById('pinGate').style.display='none';
     inp.value='';err.textContent='';
@@ -4649,7 +4680,8 @@ function cambiarPin(){
     firebase.auth().onAuthStateChanged(u=>{
       _gateUser=u||null;
       const dueño=ownerGuardado();
-      if(dueño&&(!u||u.uid!==dueño.uid)&&document.getElementById('pinGate').style.display==='none')abrirCandado();
+      const malo=!u||!cuentaHabilitada(u)||(dueño&&u.uid!==dueño.uid);
+      if(malo&&document.getElementById('pinGate').style.display==='none')abrirCandado();
     });
   }).catch(()=>{});
 })();
