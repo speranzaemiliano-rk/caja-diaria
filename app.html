@@ -1686,7 +1686,7 @@ function printVale(i){
   if(amt==null||amt<=0){toast('Cargá un importe válido antes de imprimir el vale');return}
   const note=(cm.note||'').trim();
   if(!note){toast('Cargá el nombre antes de imprimir el vale');return}
-  const fechaIso=document.getElementById('f_date')?.value||edState.iso||new Date().toISOString().slice(0,10);
+  const fechaIso=document.getElementById('f_date')?.value||edState.iso||todayIso();
   printValeFor(amt,note,cm.type,fechaIso,(cm.cpt||'').trim());
 }
 // Arma y abre el vale (usado tanto por el botón manual `printVale(i)` como
@@ -2033,7 +2033,17 @@ document.getElementById('expIdx').onclick=()=>{let c='Fecha;Dia;Saldo Inicial;In
 document.getElementById('expMov').onclick=()=>{let c='Fecha;Importe;Concepto;Referencia\n';real.forEach(d=>d.movs.forEach(m=>c+=`${d.date};${m.imp};${(m.cpt||'').replace(/;/g,',')};${refLabel(m.ref).replace(/;/g,',')}\n`));dl('movimientos_detalle.csv','\ufeff'+c,'text/csv;charset=utf-8')};
 
 /* ============ LOANS (préstamos entre empresas/proyectos) ============ */
-function todayIso(){return new Date().toISOString().slice(0,10)}
+/* La fecha SIEMPRE se arma con los componentes locales, nunca con toISOString().
+   `toISOString()` convierte a UTC, y Argentina está en UTC-3: entre las 21:00 y
+   la medianoche, en UTC ya es el día siguiente. Así, todo lo que se cargaba
+   después de las 9 de la noche quedaba fechado un día adelante — bug real
+   reportado por el usuario ("la caja está un día adelantado, hoy me marca que
+   es domingo", un sábado 22 a las 22:12). Ojo: `wdOf()` ya estaba bien porque
+   arma `new Date(y,m-1,d)`, que es local; el desfasaje entraba por acá. */
+function isoLocal(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function todayIso(){return isoLocal(new Date())}
 const LOANS_KEY='caja_loans_v1';
 function loadLoans(){try{const r=localStorage.getItem(LOANS_KEY);return r?JSON.parse(r):[]}catch(e){return []}}
 function saveLoans(){try{localStorage.setItem(LOANS_KEY,JSON.stringify(loans))}catch(e){}}
@@ -2899,7 +2909,7 @@ let editIso=null,edState=null;
 // _preexisting) nunca se ocultan: es su propio tipeo, no un dato guardado que
 // se esté revelando.
 let credRowsUnlocked=false;
-function nextDate(){if(!last)return new Date().toISOString().slice(0,10);const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return d.toISOString().slice(0,10)}
+function nextDate(){if(!last)return todayIso();const d=new Date(last.iso+'T00:00');do{d.setDate(d.getDate()+1)}while(d.getDay()===0||d.getDay()===6);return isoLocal(d)}
 // Fecha propuesta para un día NUEVO: la fecha REAL de hoy (pedido explícito del
 // usuario: "cuando genero un nuevo día me toma el día como si fuera el siguiente
 // al que estaba cargado y eso está mal, me tiene que tomar el día de la fecha
