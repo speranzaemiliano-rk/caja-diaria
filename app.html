@@ -1694,14 +1694,38 @@ function printVale(i){
 // depende del editor abierto ni de `edState`, así que sigue funcionando
 // aunque el editor ya se haya cerrado (pedido explícito del usuario: "que me
 // imprima un vale de caja cuando otorgo un crédito", automático al guardar).
-function printValeFor(amt,note,type,fechaIso,cpt){
+// Imprime el vale de un ajuste de crédito YA GUARDADO, de cualquier fecha —
+// pedido explícito del usuario ("que los movimientos de los créditos me deje
+// imprimir aunque haya sido otro día anterior"). El 🖨 del editor sólo alcanza
+// las filas del día que se está editando; éste sale del detalle de créditos,
+// que lista los movimientos de TODOS los días, así que se puede reimprimir el
+// vale de un fiado viejo sin tener que ir a buscar y reabrir ese día.
+// La fecha del vale es la del movimiento (`iso`), no la de hoy: es el
+// comprobante de esa operación.
+function printValeEntry(iso,idx){
+  const d=userDays.find(x=>x.iso===iso);
+  if(!d){toast('Ese día no se puede imprimir');return}
+  const cm=(d.credMovs||[])[idx];if(!cm)return;
+  const amt=Math.abs(cm.imp||0);
+  if(!amt){toast('Ese movimiento no tiene importe');return}
+  // imp>0 = crédito otorgado (fiado) · imp<0 = cobro, misma convención que
+  // _cptCredito. printValeFor espera 'in'/'out' como las filas del editor.
+  printValeFor(amt,(cm.note||'').trim(),cm.imp<0?'out':'in',iso,(cm.cpt||'').trim(),true);
+}
+// `volver`: el vale y el detalle de créditos comparten el mismo #modal, así que
+// abrir el vale desde el detalle lo pisa. Con esto la ✕ y el botón "Volver"
+// devuelven al detalle en vez de cerrar todo, para poder imprimir varios
+// movimientos seguidos sin tener que reabrirlo (y volver a poner la clave).
+function printValeFor(amt,note,type,fechaIso,cpt,volver){
   const [y,m,d]=fechaIso.split('-');
   const fechaFmt=`${d}/${m}/${y}`;
   const letras=importeEnLetras(amt,CUR);
+  const cerrar=volver?'renderCreditDetailModal()':'closeModal()';
   document.getElementById('modal').innerHTML=`
     <div class="vale-actions" style="display:flex;justify-content:flex-end;gap:10px;padding:16px 16px 0">
+      ${volver?`<button class="btn-ghost" style="margin-right:auto" onclick="renderCreditDetailModal()">← Volver al detalle</button>`:''}
       <button class="btn-ghost" onclick="window.print()">${ic('printer',15)} Imprimir</button>
-      <button class="mclose" onclick="closeModal()">✕</button>
+      <button class="mclose" onclick="${cerrar}">✕</button>
     </div>
     <div style="padding:10px 26px 30px">
       <div style="border:1.5px solid #7a1330;border-radius:16px;overflow:hidden;font-family:'Roboto',sans-serif">
@@ -2504,6 +2528,7 @@ function renderCreditDetailModal(hastaIso){
           <span class="credfecha">${e.date}${e.cpt?` <span style="color:var(--ink3)">· ${esc(e.cpt)}</span>`:''}</span>
           <span style="display:flex;align-items:center;gap:2px">
             <span class="credimp ${e.imp>=0?'pos':'neg'}">${pesoS(e.imp)}</span>
+            <button class="rowact" title="Imprimir el vale de caja de este movimiento, con la fecha del ${e.date}" onclick="printValeEntry('${e.iso}',${e.idx})">${ic('printer',13)}</button>
             <button class="rowact" title="Corregir este ajuste en su fecha (${e.date}) — modifica los saldos de ese día en adelante" onclick="editCreditNoteEntry('${e.iso}',${e.idx})">✎</button>
             <button class="rowact del" title="Eliminar este ajuste" onclick="deleteCreditNoteEntry('${e.iso}',${e.idx})">${ic('trash',13)}</button>
           </span>
