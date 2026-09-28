@@ -4177,9 +4177,21 @@ function applyRemote(d){
   try{
     // Absorber las lápidas remotas SIN perder las locales pendientes (fusión por-máximo).
     _mergeDelMap(delContexts,d.delContexts);_mergeDelMap(delLoans,d.delLoans);saveDelMaps();
-    if(Array.isArray(d.contexts)){const cc=d.contexts.filter(c=>_vivoTrasLapida(c,delContexts));localStorage.setItem('caja_contexts_v1',JSON.stringify(cc.length?cc:d.contexts))}
-    if(d.data&&typeof d.data==='object')Object.keys(d.data).forEach(id=>['ARS','USD'].forEach(cur=>{const arr=(d.data[id]||{})[cur];if(Array.isArray(arr))localStorage.setItem('caja_user_days_v2::'+id+'::'+cur,JSON.stringify(arr))}));
-    if(Array.isArray(d.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(d.loans.filter(l=>_vivoTrasLapida(l,delLoans))));
+    // La nube NO pisa lo local: se FUSIONA, con el mismo criterio que ya usa la subida
+    // (_elegirDia → gana el sello `mod` más nuevo). Antes acá se sobrescribían los días
+    // locales con los de la nube tal cual, así que TODO lo cargado en este dispositivo
+    // que todavía no había subido se perdía sin aviso. Dos síntomas conocidos de eso:
+    //  · un cambio de divisa dejaba la pata en pesos pero la de US$ desaparecía (la
+    //    caja que no se está mirando se escribe local y la pisaba la nube);
+    //  · un día borrado volvía a aparecer, porque la lápida de deleteDay() se pisaba
+    //    con la versión viva que seguía en la nube.
+    const fus=fusionarCajas(fullBackupPayload(),d||{});
+    if(Array.isArray(fus.contexts)&&fus.contexts.length)localStorage.setItem('caja_contexts_v1',JSON.stringify(fus.contexts));
+    if(fus.data&&typeof fus.data==='object')Object.keys(fus.data).forEach(id=>['ARS','USD'].forEach(cur=>{
+      const arr=(fus.data[id]||{})[cur];
+      if(Array.isArray(arr))localStorage.setItem('caja_user_days_v2::'+id+'::'+cur,JSON.stringify(arr));
+    }));
+    if(Array.isArray(fus.loans))localStorage.setItem('caja_loans_v1',JSON.stringify(fus.loans));
   }catch(e){}
   try{contexts=loadContexts();loans=loadLoans();if(!contexts.some(c=>c.id===activeContextId))activeContextId=contexts[0].id;userDays=loadUser();_barrerPrestamosHuerfanos();renderCtxSelectors();renderAll();}catch(e){}
   _applyingRemote=false;
