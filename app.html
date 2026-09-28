@@ -4240,10 +4240,14 @@ function _elegirDia(a,b){
   if(!a)return b;
   if(!b)return a;
   const ma=a.mod||0,mb=b.mod||0;
-  if(ma&&mb)return ma>=mb?a:b;   // los dos editados: gana el más nuevo
+  // MISMO sello (o ninguno de los dos sellado): no hay forma de saber cuál es más
+  // nuevo, así que NO se descarta por posición — se queda el que tiene más contenido.
+  // Antes el empate lo ganaba 'a' (el lado local) y eso hacía desaparecer, por
+  // ejemplo, un crédito que el otro lado sí tenía.
+  if(ma===mb)return _pesoDia(b)>=_pesoDia(a)?b:a;
+  if(ma&&mb)return ma>mb?a:b;    // los dos editados y con sellos distintos: el más nuevo
   if(ma&&!mb)return a;           // sólo 'a' fue editado: manda 'a', aunque tenga menos
-  if(!ma&&mb)return b;           // ídem al revés
-  return _pesoDia(b)>=_pesoDia(a)?b:a; // ninguno sellado: ante la duda, el más completo
+  return b;                      // ídem al revés
 }
 /* local y remoto tienen la forma de fullBackupPayload(). 'b' gana los empates,
    así que se llama con la nube en 'b': ante paridad total manda lo compartido. */
