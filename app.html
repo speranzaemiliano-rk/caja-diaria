@@ -1488,12 +1488,12 @@ function renderWarnBanner(){
   const items=computeGlobalWarnings();
   if(!items.length){el.innerHTML='';return}
   items.sort((a,b)=>a.worst.iso<b.worst.iso?1:-1);
-  // Mismos rótulos que el modal de detalle del día (openDay): "Saldo según
-  // movimientos" (lo que dice el sistema) vs "Saldo final (caja + créditos)"
-  // (lo contado en la realidad) — para que el cartel no muestre solo el
-  // número de la diferencia, sino de dónde sale (pedido del usuario).
+  // Mismos rótulos que el modal de detalle del día (openDay): el efectivo que
+  // sale de los movimientos contra el efectivo contado — para que el cartel no
+  // muestre solo el número de la diferencia, sino de dónde sale (pedido del
+  // usuario). Los créditos no entran: no están en el cajón.
   const rows=items.map(it=>{
-    const sistema=it.worst.sf,real=Math.round(((it.worst.fis||0)+(it.worst.cred||0))*100)/100;
+    const sistema=it.worst.sf,real=(it.worst.fis||0);
     return `<div class="warnitem" onclick="jumpToCaja('${it.ctx.id}','${it.cur}','${it.worst.iso}')" title="Ver el día">
       <span class="wn">${esc(ctxLabel(it.ctx))} · ${it.cur==='ARS'?'$ Pesos':'US$ Dólares'} · ${it.worst.date}</span>
       <span class="wnums"><span>Según sistema <b>${pesoCur(sistema,it.cur)}</b></span><span>Caja real <b>${pesoCur(real,it.cur)}</b></span></span>
@@ -1512,27 +1512,22 @@ function renderKpis(){
   if(!d){document.getElementById('kpis').innerHTML=`<div class="kpi acc" style="max-width:440px"><div class="lab">◆ Saldo de caja</div><div class="num mono">${peso(0)}</div><div class="meta">sin movimientos aún</div></div>`;return}
   const _dm=d.movs||[];
   const nin=_dm.filter(m=>m.imp>0).length,nout=_dm.filter(m=>m.imp<0).length;
-  // Los números grandes NO cambian (son los de siempre: si/ing/egr/sf, el saldo
-  // "de movimientos"). El desglose de abajo reparte ESE mismo número en sus 2
-  // partes: Efectivo = número grande menos el crédito, Crédito = el acumulado de
-  // créditos — así "Efectivo + Crédito" siempre cierra con el número grande.
+  // Los números grandes son EFECTIVO puro (si/ing/egr/sf). El crédito no está
+  // adentro: va en su propia línea, rotulada "aparte", porque lo que te deben no
+  // está en el cajón. Otorgar un crédito baja la caja como cualquier egreso.
   const credIn=(d.credMovs||[]).filter(cm=>cm.imp>0).reduce((s,cm)=>s+cm.imp,0);
   const credOut=(d.credMovs||[]).filter(cm=>cm.imp<0).reduce((s,cm)=>s-cm.imp,0);
   const siCred=d.credSi||0,sfCred=d.cred||0;
-  const siCash=Math.round((d.si-siCred)*100)/100;
-  const ingCash=Math.round(((d.ing||0)-credIn)*100)/100;
-  const egrCash=Math.round(((d.egr||0)+credOut)*100)/100;
-  const sfCash=Math.round((d.sf-sfCred)*100)/100;
   // Tarjeta chica de diferencia de caja del día (además de la alarma, que solo
   // aparece cuando es grande): acá se ve siempre, aunque sea chica o no haya
   // arqueo cargado todavía — un vistazo rápido sin abrir el detalle del día.
-  const realCaja=d.fis!=null?Math.round(((d.fis||0)+(d.cred||0))*100)/100:null;
+  const realCaja=d.fis!=null?(d.fis||0):null;
   const difColor=d.fis==null?'var(--ink3)':(isWarn(d)?'var(--red)':'var(--green)');
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo ${peso(siCash)} · Crédito ${peso(siCred)}</div></div>
-    <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">Efectivo ${peso(ingCash)} · Crédito ${peso(credIn)}</div></div>
-    <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">Efectivo ${pesoS(egrCash)} · Crédito ${pesoS(-credOut)}</div></div>
-    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día</div><div class="meta mono">Efectivo ${peso(sfCash)} · Crédito ${peso(sfCred)}</div></div>
+    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo · te deben ${peso(siCred)} aparte</div></div>
+    <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">${credOut?'Incluye '+peso(credOut)+' de créditos cobrados':'Efectivo'}</div></div>
+    <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">${credIn?'Incluye '+pesoS(-credIn)+' de créditos otorgados':'Efectivo'}</div></div>
+    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día · efectivo</div><div class="meta mono">Te deben ${peso(sfCred)} aparte</div></div>
     <div class="kpi small"><div class="lab">⚖ Diferencia de caja</div><div class="num mono" style="color:${difColor}">${d.fis!=null?pesoS(d.dif):'—'}</div><div class="meta">${d.fis!=null?'Según sistema '+peso(d.sf):'Sin arqueo cargado'}</div>${d.fis!=null?`<div class="meta mono">Caja real ${peso(realCaja)}</div>`:''}</div>`;
 }
 let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
@@ -1546,23 +1541,17 @@ function updateDaySelBar(){
   bar.innerHTML=`<span>${daySelSet.size} seleccionado(s)</span><span>Suma neta: <b class="${sum>=0?'pos':'neg'}">${pesoS(sum)}</b></span><button type="button" class="clr" id="daySelClear">Limpiar selección</button>`;
   const cb=document.getElementById('daySelClear');if(cb)cb.onclick=()=>{daySelSet=new Set();renderDayMovs()};
 }
-// Filas extra del pie de la tabla de movimientos cuando el día tiene créditos.
-// Desde v82 el saldo final es `si + ing + egr + credAdj` (fiar no baja el saldo:
-// sale efectivo pero entra un crédito a cobrar que lo compensa). El problema es
-// que ese `+ credAdj` no se mostraba en ningún lado, así que las 4 tarjetas
-// (Saldo inicial / Ingresos / Egresos / Saldo final) NO cerraban entre sí y se
-// leía como "la caja no me resta los gastos" — bug real reportado con un día
-// donde 27.090.025 − 205.700 daba 27.044.725 en pantalla (160.400 de crédito
-// sumando por atrás, invisibles). Estas dos filas hacen explícito el término que
-// faltaba y la variación final, así la cuenta cierra a la vista.
+// Fila extra del pie de la tabla de movimientos cuando el día tiene créditos.
+// El saldo de la caja es efectivo puro (si + ing + egr): el flujo neto de arriba
+// YA es la variación del saldo, y fiar lo baja como cualquier egreso. Esta fila
+// es informativa: dice cuánto se movió lo que te deben, que es una cuenta aparte
+// y NO entra en el saldo. Antes (v82–v120) el saldo sumaba el crédito y hacía
+// falta una fila de "Variación del saldo" para que la cuenta cerrara a la vista.
 function credLineRows(d,neto,extraCols){
   const cred=Math.round((d.credAdj||0)*100)/100;
   if(!cred)return '';
   const pad=extraCols?'<td></td>':'';
-  const padTop=extraCols?'<td style="border-top:1px solid var(--line2)"></td>':'';
-  const varSaldo=Math.round((neto+cred)*100)/100;
-  return `<tr style="cursor:default">${pad}<td style="font-weight:700;color:${cred>=0?'var(--green)':'var(--red)'}">${pesoS(cred)}</td><td class="l" style="color:var(--ink3)">Créditos a cobrar del día <span style="opacity:.7">· ${cred>=0?'crédito otorgado (el egreso del efectivo va arriba)':'crédito cobrado (el ingreso del efectivo va arriba)'}</span></td><td></td></tr>
-    <tr style="cursor:default">${padTop}<td style="font-weight:700;border-top:1px solid var(--line2);color:${varSaldo>=0?'var(--green)':'var(--red)'}">${pesoS(varSaldo)}</td><td class="l" style="border-top:1px solid var(--line2);color:var(--ink2);font-weight:600">Variación del saldo</td><td style="border-top:1px solid var(--line2)"></td></tr>`;
+  return `<tr style="cursor:default">${pad}<td style="font-weight:700;color:var(--ink3)">${pesoS(cred)}</td><td class="l" style="color:var(--ink3)">Créditos a cobrar <span style="opacity:.7">· ${cred>=0?'fiado hoy — la plata ya salió arriba; esto es lo que te deben, no entra en el saldo':'cobrado hoy — la plata ya entró arriba; esto baja lo que te deben, no entra en el saldo'}</span></td><td></td></tr>`;
 }
 function renderDayMovs(){
   const d=last;
@@ -1772,7 +1761,7 @@ function openDay(d){
         <div class="dk"><b>Saldo inicial</b><div class="dv">${peso(d.si)}</div></div>
         <div class="dk"><b>Ingresos</b><div class="dv pos">${peso(d.ing)}</div></div>
         <div class="dk"><b>Egresos</b><div class="dv neg">${pesoS(d.egr)}</div></div>
-        <div class="dk"><b>Saldo final</b><div class="dv" style="color:var(--gold2)">${peso(d.sf)}</div>${(d.credAdj||0)!==0?`<div style="font-size:11px;color:var(--ink3);margin-top:3px;line-height:1.3">incluye ${pesoS(d.credAdj)} de créditos del día</div>`:''}</div></div>
+        <div class="dk"><b>Saldo final</b><div class="dv" style="color:var(--gold2)">${peso(d.sf)}</div>${(d.credAdj||0)!==0?`<div style="font-size:11px;color:var(--ink3);margin-top:3px;line-height:1.3">te deben ${pesoS(d.credAdj)} más por los créditos del día</div>`:''}</div></div>
       <div class="mvs"><table>
         <thead><tr><th>Importe</th><th class="l">Concepto / Descripción</th><th class="l">Referencia</th></tr></thead>
         <tbody>${movRows}</tbody>
@@ -1780,11 +1769,10 @@ function openDay(d){
       </table></div>
       <div class="ctrl" style="grid-template-columns:1fr">
         <div class="ctrlbox"><h4>✓ Control de caja</h4>
-          <div class="crow"><span>Saldo del sistema (con créditos)</span><span>${peso(d.sf)}</span></div>
+          <div class="crow"><span>Saldo del sistema (efectivo)</span><span>${peso(d.sf)}</span></div>
           <div class="crow"><span>Caja real (conteo físico)</span><span>${d.fis!=null?peso(d.fis):'—'}</span></div>
           <div class="crow"><span>Cheques / valores</span><span>${d.chq!=null?peso(d.chq):'—'}</span></div>
           <div class="crow"><span>Créditos a cobrar <button type="button" onclick="openCreditDetail('${d.iso}')" style="margin-left:8px;background:none;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--ink2);cursor:pointer;vertical-align:1px" title="Ver quién forma este saldo (pide clave)">${ic('lock',11)} Ver</button></span><span>${d.cred!=null?peso(d.cred):'—'}</span></div>
-          ${d.fis!=null?`<div class="crow" style="border-top:1px solid var(--line);padding-top:8px"><span>Saldo final (caja + créditos)</span><span style="font-weight:600">${peso(Math.round(((d.fis||0)+(d.cred||0))*100)/100)}</span></div>`:''}
           <div class="crow"><span>Diferencia de caja</span><span style="color:${d.dif!=null&&Math.abs(d.dif)>1000?'var(--red)':'var(--green)'}">${d.dif!=null?pesoS(d.dif):'—'}</span></div></div>
       </div>${caja}
     </div>`;
@@ -2370,15 +2358,15 @@ function cascadeChain(ctxId,cur,ud){
       const credAdj=d.credAdj!=null?d.credAdj:(d.cred!=null?d.cred:0);
       const newCredSi=prevCred,newCred=Math.round((prevCred+credAdj)*100)/100;
       const newSi=prevSf!=null?prevSf:d.si;
-      // El saldo final incluye el crédito del día: el efectivo baja (egr) pero el
-      // crédito a cobrar lo compensa, así el saldo TOTAL no cae al fiar. newSi ya
-      // arrastra el crédito acumulado de días previos (prevSf lo incluye), así que
-      // sf = efectivo acumulado + créditos acumulados. La diferencia de caja (newDif)
-      // queda entonces como efectivo esperado − contado, sin penalizar por el crédito.
-      const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0)+credAdj)*100)/100;
-      // Diferencia de caja: compara lo esperado según movimientos contra lo
-      // contado (caja física + créditos a cobrar, que cuentan como efectivo).
-      const newDif=d.fis!=null?Math.round((newSf-((d.fis||0)+newCred))*100)/100:null;
+      // El saldo de la caja es EL EFECTIVO: sf = si + ingresos + egresos, nada más.
+      // Fiar BAJA la caja (sale la plata) y lo que te deben se lleva aparte, en el
+      // saldo de créditos (newCred). Hasta v120 el saldo sumaba también el crédito
+      // del día, así que otorgar un crédito no movía el total — el usuario lo pidió
+      // al revés: "otorgo un crédito y me lo toma a favor, y es en negativo".
+      const newSf=Math.round((newSi+(d.ing||0)+(d.egr||0))*100)/100;
+      // Diferencia de caja: efectivo esperado según los movimientos contra el
+      // efectivo contado. El crédito no entra: no está en el cajón.
+      const newDif=d.fis!=null?Math.round((newSf-(d.fis||0))*100)/100:null;
       const changed=Math.round((d.si||0)*100)!==Math.round(newSi*100)||Math.round((d.sf||0)*100)!==Math.round(newSf*100)||Math.round((d.credSi||0)*100)!==Math.round(newCredSi*100)||Math.round((d.cred||0)*100)!==Math.round(newCred*100)||d.dif!==newDif;
       if(changed){
         const rec={...d,si:newSi,sf:newSf,dif:newDif,credSi:newCredSi,cred:newCred,credAdj};
@@ -2432,13 +2420,13 @@ function _correrHistoricoPorUser(daysSorted, baseByIso){
     if(bd&&d.src!=='user'){
       // día del histórico importado: autoritativo (preserva sus saltos propios),
       // sólo corrido por el carry que dejaron los días de usuario anteriores.
-      if(carry!==0){ d.si=r2((bd.si||0)+carry); d.sf=r2((bd.sf||0)+carry); if(d.fis!=null)d.dif=r2(d.sf-((d.fis||0)+(d.cred||0))); }
+      if(carry!==0){ d.si=r2((bd.si||0)+carry); d.sf=r2((bd.sf||0)+carry); if(d.fis!=null)d.dif=r2(d.sf-(d.fis||0)); }
       run=r2((bd.sf||0)+carry);
     }else{
       // día de usuario (intercalado en el histórico o pisando un día base):
       // encadena desde el corriente. Sin histórico previo arranca de su propio si
       // (idéntico a cascadeChain) → no-op en cajas sin histórico.
-      const net=(d.ing||0)+(d.egr||0)+(d.credAdj!=null?d.credAdj:0);
+      const net=(d.ing||0)+(d.egr||0);
       const si=(run!=null?run:(d.si||0)), sf=r2(si+net);
       if(r2(d.si)!==r2(si))d.si=r2(si);
       if(r2(d.sf)!==sf)d.sf=sf;
@@ -2517,9 +2505,8 @@ function creditNoteEntries(note,hastaIso){
 // ajuste nuevo con fecha de hoy.
 // Además mueve el efectivo en sentido contrario (decisión explícita del
 // usuario): si te pagan, baja el crédito y ENTRA plata; si fiás más, sube el
-// crédito y SALE plata. Como sf = si + ing + egr + credAdj, las dos patas se
-// cancelan y el saldo total no se mueve — que es lo correcto: cambiaste un
-// crédito a cobrar por efectivo, no ganaste ni perdiste.
+// crédito y SALE plata. El saldo es efectivo puro, así que fiar lo BAJA y cobrar
+// lo SUBE; lo que te deben se sigue en su propia cuenta.
 function ajustarCreditoHoy(note){
   const iso=todayIso(),fechaTxt=iso.split('-').reverse().join('/');
   const nombre=(note||'').trim()||'(sin nombre)';
@@ -2840,11 +2827,10 @@ function renderCreditDetailModal(hastaIso){
   document.getElementById('overlay').classList.add('on');document.body.style.overflow='hidden';
 }
 /* ===== auditoría: créditos sin su movimiento de caja =====
-   El saldo (v82) suma credAdj asumiendo que fiar tiene DOS patas: sale el
-   efectivo y nace el crédito, que se compensan. Si un día quedó con el crédito
-   pero SIN la salida de efectivo, el saldo del sistema queda inflado por ese
-   monto y el arqueo contra el conteo físico marca esa misma diferencia (la
-   plata sí salió del cajón, pero nada la registró). Desde v93 saveDay()
+   Fiar tiene DOS patas: sale el efectivo (un egreso) y nace el crédito a cobrar.
+   Si un día quedó con el crédito pero SIN la salida de efectivo, el saldo del
+   sistema queda inflado por ese monto y el arqueo contra el conteo físico marca
+   esa misma diferencia (la plata sí salió del cajón, pero nada la registró). Desde v93 saveDay()
    pregunta y lo agrega, pero los días cargados ANTES quedaron así, y hay que
    poder encontrarlos: el usuario venía arrastrando una diferencia de $1.000.000
    sin saber de qué día salía. */
@@ -3455,11 +3441,9 @@ function computeEditor(){
     movs.push({imp,cpt:(mv.cpt||'').trim(),ref:(mv.ref||'').trim()});
   });
   const sf=Math.round((si+ing+egr)*100)/100;
-  // Neto de créditos a cobrar cargados ese día. Los créditos cuentan como parte
-  // del saldo: al fiar, la plata sale como EGRESO (el efectivo baja) pero el saldo
-  // TOTAL no baja, porque el crédito a cobrar lo compensa. c.sf sigue siendo el
-  // efectivo (para quien lo necesite); credAdj se suma aparte donde se muestra el
-  // saldo total (preview y cascadeChain).
+  // Neto de créditos a cobrar cargados ese día. NO entra en el saldo: el saldo es
+  // el efectivo (sf = si + ing + egr) y fiar lo baja como cualquier egreso. credAdj
+  // sólo alimenta el saldo de créditos (lo que te deben), que va aparte.
   const _cm=(edState.credMovs||[]).map(cm=>{const a=num(cm.amt);if(a==null||a===0)return null;return Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100;}).filter(v=>v!=null);
   const credAdj=Math.round(_cm.reduce((s,v)=>s+v,0)*100)/100;
   return {si,ing:Math.round(ing*100)/100,egr:Math.round(egr*100)/100,sf,movs,credAdj};
@@ -3572,10 +3556,9 @@ function recalcEditor(){
   });
   const ing=Math.round((c.ing+fxIng)*100)/100;
   const egr=Math.round((c.egr-loanTot-fxEgr)*100)/100;
-  // El saldo final del preview incluye el neto de créditos del día (c.credAdj): al
-  // fiar, el efectivo baja como egreso pero el crédito a cobrar lo compensa, así el
-  // saldo TOTAL no cae. Mismo criterio que cascadeChain() al guardar.
-  const sf=Math.round((c.sf-loanTot+fxIng-fxEgr+(c.credAdj||0))*100)/100;
+  // El saldo final del preview es efectivo puro: el crédito NO se suma. Al fiar,
+  // el efectivo baja como egreso y el saldo cae. Mismo criterio que cascadeChain().
+  const sf=Math.round((c.sf-loanTot+fxIng-fxEgr)*100)/100;
   document.getElementById('s_in').textContent=peso(ing);
   document.getElementById('s_out').textContent=pesoS(egr);
   const net=Math.round((ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
@@ -3619,9 +3602,8 @@ function saveDay(){
   // crédito tiene que salir automáticamente de la caja como crédito otorgado,
   // al revés si recibo"). Otorgar crédito => EGRESO; cobrar un crédito =>
   // INGRESO. Es la misma mecánica de dos patas que ya hacía ajustarCreditoHoy();
-  // acá faltaba, y por eso el saldo quedaba inflado (sf suma credAdj desde v82
-  // dando por hecho que la salida ya está registrada) y el arqueo marcaba justo
-  // esa diferencia contra el conteo físico, porque la plata sí había salido.
+  // acá faltaba, y por eso el saldo quedaba inflado y el arqueo marcaba justo esa
+  // diferencia contra el conteo físico, porque la plata sí había salido.
   //
   // Se evaluó preguntar antes (por el caso de fiar MERCADERÍA, donde no sale
   // efectivo) y se descartó: el usuario lo pidió automático dos veces. Si algún
@@ -3648,7 +3630,6 @@ function saveDay(){
   }
   const[y,mo,dd]=iso.split('-').map(Number);
   const dif=fis!=null?Math.round((c.sf-fis)*100)/100:null;
-  // dif queda provisorio (cascadeChain lo recalcula sumando créditos al conteo).
   // credSi/cred quedan provisorios acá; cascadeChain() los recalcula bien (saldo
   // acumulado de créditos) justo abajo, a partir de credAdj.
   const rec={src:'user',sheet:'USER-'+iso,y,m:mo,d:dd,date:`${String(dd).padStart(2,'0')}/${String(mo).padStart(2,'0')}/${y}`,iso,wd:wdOf(iso),
