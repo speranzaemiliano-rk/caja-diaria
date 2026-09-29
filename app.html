@@ -2834,6 +2834,30 @@ function renderCreditDetailModal(hastaIso){
    pregunta y lo agrega, pero los días cargados ANTES quedaron así, y hay que
    poder encontrarlos: el usuario venía arrastrando una diferencia de $1.000.000
    sin saber de qué día salía. */
+/* ¿Este movimiento de caja es la contrapartida de ESE crédito?
+   Bug real reportado ("cuando cargo un crédito lo carga con el sentido inverso
+   y además no lo resta de la caja"): antes alcanzaba con que el importe fuera el
+   opuesto, sin mirar NADA más. Así, un día donde fiás $100.000 y además le pagás
+   $100.000 a un proveedor hacía que el pago al proveedor se tomara como la
+   contrapartida del fiado — no se generaba el egreso del crédito y la caja no
+   bajaba. Al revés igual: cobrás $100.000 de un fiado y vendés $100.000 en
+   efectivo, y el cobro no entraba. Los importes redondos se repiten todo el
+   tiempo en una caja, así que la colisión es frecuente y **silenciosa**: el
+   saldo queda mal sin ninguna señal.
+   Ahora, además del importe opuesto, el movimiento tiene que estar ligado al
+   crédito: o lo generó la app (`ref:'Crédito'`), o lleva el nombre de la persona
+   en el concepto (el caso de haberlo cargado a mano, donde lo natural es escribir
+   "Fiado Juan"). Un "Pago proveedor" ya no se lo lleva puesto.
+   Contrapartida del ajuste: si alguien cargó el movimiento a mano SIN el nombre,
+   ahora se genera igual y queda duplicado. Es el mal menor y es visible — el
+   movimiento de más aparece en la lista del día y se borra; lo otro corrompía el
+   saldo sin que se viera. */
+function _esContrapartidaDe(m,imp,nombre){
+  if(!m||Math.abs((m.imp||0)+imp)>=0.005)return false;
+  if(m.ref==='Crédito')return true;
+  const n=(nombre||'').trim();
+  return !!n&&(m.cpt||'').toLowerCase().indexOf(n.toLowerCase())>=0;
+}
 function creditosSinContrapartida(ctxId,cur){
   const out=[];
   ctxRealDays(ctxId,cur).forEach(d=>{
@@ -2843,7 +2867,7 @@ function creditosSinContrapartida(ctxId,cur){
       if(!cm||!cm.imp)return;
       // Busca un movimiento de caja que compense este crédito y lo "consume",
       // para que dos créditos iguales el mismo día necesiten dos movimientos.
-      const i=movs.findIndex(m=>Math.abs(m.imp+cm.imp)<0.005);
+      const i=movs.findIndex(m=>_esContrapartidaDe(m,cm.imp,cm.note));
       if(i>=0){movs.splice(i,1);return}
       out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp});
     });
@@ -3618,7 +3642,16 @@ function saveDay(){
     const a=num(cm.amt);
     return a!=null&&a!==0&&(cm.note||'').trim();
   }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim(),cpt:(cm.cpt||'').trim()}));
-  const sinContrapartida=credNuevos.filter(cn=>!c.movs.some(m=>Math.abs(m.imp+cn.imp)<0.005));
+  // El movimiento que ya compensa un crédito se CONSUME de la lista: sin eso,
+  // dos créditos iguales el mismo día matcheaban los dos contra el mismo
+  // movimiento y uno se quedaba sin su egreso. Mismo criterio que usa la
+  // auditoría (`_esContrapartidaDe`), para que las dos no puedan discrepar.
+  const _libres=c.movs.slice();
+  const sinContrapartida=credNuevos.filter(cn=>{
+    const i=_libres.findIndex(m=>_esContrapartidaDe(m,cn.imp,cn.note));
+    if(i>=0){_libres.splice(i,1);return false}
+    return true;
+  });
   if(sinContrapartida.length){
     sinContrapartida.forEach(cn=>{
       c.movs.push({imp:Math.round(-cn.imp*100)/100,
