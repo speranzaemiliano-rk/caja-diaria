@@ -2506,7 +2506,9 @@ function creditNoteEntries(note,hastaIso){
 // Además mueve el efectivo en sentido contrario (decisión explícita del
 // usuario): si te pagan, baja el crédito y ENTRA plata; si fiás más, sube el
 // crédito y SALE plata. El saldo es efectivo puro, así que fiar lo BAJA y cobrar
-// lo SUBE; lo que te deben se sigue en su propia cuenta.
+// lo SUBE; lo que te deben se sigue en su propia cuenta. El cartel de
+// confirmación dice cuánto se mueve la caja: hasta v121 el saldo sumaba el
+// crédito y las dos patas se cancelaban, y el texto todavía decía eso.
 function ajustarCreditoHoy(note){
   const iso=todayIso(),fechaTxt=iso.split('-').reverse().join('/');
   const nombre=(note||'').trim()||'(sin nombre)';
@@ -2531,7 +2533,7 @@ function ajustarCreditoHoy(note){
     'Ajuste del '+fechaTxt+' para "'+nombre+'"'+(cpt?' ('+cpt+')':'')+':\n\n'+
     'Crédito:  '+pesoCurS(delta,CUR)+'   → queda en '+pesoCur(nuevoSaldo,CUR)+'\n'+
     'Efectivo: '+pesoCurS(-delta,CUR)+'   ('+(cobro?'ingreso a la caja':'salida de la caja')+')\n\n'+
-    'El saldo total no cambia. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
+    'El saldo de la caja '+(cobro?'sube':'baja')+' '+pesoCur(Math.abs(delta),CUR)+'. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
   aplicarAjusteCreditoHoy(iso,delta,nombre,cobro,cpt);
   renderCreditDetailModal();
   toast('Ajuste registrado el '+fechaTxt);
@@ -2852,11 +2854,20 @@ function renderCreditDetailModal(hastaIso){
    ahora se genera igual y queda duplicado. Es el mal menor y es visible — el
    movimiento de más aparece en la lista del día y se borra; lo otro corrompía el
    saldo sin que se viera. */
+// El nombre se compara SIN TILDES: la ficha dice "Martín" y el movimiento
+// cargado a mano casi siempre dice "Martin", y con comparación literal no
+// matcheaba y se generaba un egreso duplicado.
+function _txtLlano(x){
+  return (x==null?'':String(x)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+}
 function _esContrapartidaDe(m,imp,nombre){
   if(!m||Math.abs((m.imp||0)+imp)>=0.005)return false;
-  if(m.ref==='Crédito')return true;
-  const n=(nombre||'').trim();
-  return !!n&&(m.cpt||'').toLowerCase().indexOf(n.toLowerCase())>=0;
+  if(_txtLlano(m.ref)==='credito')return true;
+  const cpt=_txtLlano(m.cpt),n=_txtLlano(nombre);
+  if(n&&cpt.indexOf(n)>=0)return true;
+  // Cargado a mano sin el nombre pero diciendo qué es ("fiado", "crédito a
+  // cuenta"): alcanza para no duplicar la salida.
+  return /credit|fiad/.test(cpt);
 }
 function creditosSinContrapartida(ctxId,cur){
   const out=[];
@@ -2869,7 +2880,12 @@ function creditosSinContrapartida(ctxId,cur){
       // para que dos créditos iguales el mismo día necesiten dos movimientos.
       const i=movs.findIndex(m=>_esContrapartidaDe(m,cm.imp,cm.note));
       if(i>=0){movs.splice(i,1);return}
-      out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp});
+      // No hay contrapartida atribuible. Si igual quedó un movimiento del monto
+      // justo, se avisa: puede ser ése, cargado a mano con otro texto, y entonces
+      // agregar el que falta DUPLICARÍA la salida. Sin este aviso el botón
+      // "Agregar" de la auditoría es una trampa fácil de pisar.
+      const dudoso=movs.some(m=>Math.abs((m.imp||0)+cm.imp)<0.005);
+      out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp,dudoso});
     });
   });
   return out;
@@ -2879,7 +2895,7 @@ function openAuditCreditos(){
   const tot=Math.round(faltan.reduce((s,x)=>s+x.imp,0)*100)/100;
   const filas=faltan.map(f=>`
     <div class="crow" style="align-items:center">
-      <span><b>${f.date}</b> · ${esc(f.note)}</span>
+      <span><b>${f.date}</b> · ${esc(f.note)}${f.dudoso?`<span style="display:block;font-size:11px;color:var(--ink3);line-height:1.35">Revisá ese día: hay un movimiento de ${pesoS(-f.imp)} que podría ser éste, cargado a mano. Si es ése, no agregues otro.</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:10px">
         <span class="${f.imp>=0?'pos':'neg'}" style="font-family:var(--mono)">${pesoS(f.imp)}</span>
         <button class="rowact" style="width:auto;padding:0 9px;font-size:11.5px;font-weight:600"
