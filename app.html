@@ -3387,6 +3387,20 @@ function recalcFxPreview(){
   const el=document.getElementById('ed_fxArs');if(!el)return;
   el.value=(usd!=null&&rate!=null)?fmtAR.format(Math.round(usd*rate*100)/100):'';
 }
+// Confirmación antes de quitar una fila del editor del día. Los movimientos YA
+// GUARDADOS preguntan desde siempre (borrarMovimiento / deleteDay); las ✕ de acá
+// borraban al toque, y un click de más se llevaba un renglón ya tipeado sin
+// forma de recuperarlo — pedido del usuario.
+// Una fila VACÍA se quita sin preguntar: al cargar un día se agregan y se sacan
+// renglones en blanco todo el tiempo y un cartel ahí sería insoportable.
+function _confirmarQuitarFila(desc){
+  if(!desc)return true;              // fila en blanco: se va sin preguntar
+  return confirm('¿Quitar este renglón?\n\n'+desc+'\n\nTodavía no guardaste el día; se puede volver a cargar a mano.');
+}
+// Descripción corta de la fila para el cartel. Devuelve '' si está en blanco.
+function _descFila(partes){
+  return partes.map(x=>(x==null?'':String(x)).trim()).filter(Boolean).join(' · ');
+}
 function renderEdFx(){
   const el=document.getElementById('ed_fxList');if(!el)return;
   if(!edState.fx||!edState.fx.length){el.innerHTML='';return}
@@ -3397,7 +3411,10 @@ function renderEdFx(){
       <button class="rmrow" type="button" data-i="${i}" title="Quitar">✕</button>
     </div>`;
   }).join('')+'</div>';
-  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{edState.fx.splice(+b.dataset.i,1);renderEdFx();recalcEditor()});
+  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{
+    const fx=edState.fx[+b.dataset.i]||{};
+    if(!confirm('¿Quitar esta operación de cambio?\n\n'+(fx.type==='venta'?'Venta':'Compra')+' de divisa · US$ '+fmtAR.format(Math.round(fx.usd||0))+' ↔ $ '+fmtAR.format(Math.round(fx.ars||0))+'\n\nSe quitan las dos patas: la de pesos y la de dólares.'))return;
+    edState.fx.splice(+b.dataset.i,1);renderEdFx();recalcEditor()});
 }
 function renderEdLoanSelect(){
   const sel=document.getElementById('ed_loanTo');if(!sel)return;
@@ -3417,7 +3434,10 @@ function renderEdLoans(){
       <button class="rmrow" type="button" data-i="${i}" title="Quitar préstamo">✕</button>
     </div>`;
   }).join('')+'</div>';
-  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{edState.loans.splice(+b.dataset.i,1);renderEdLoans();recalcEditor()});
+  el.querySelectorAll('.rmrow').forEach(b=>b.onclick=()=>{
+    const l=edState.loans[+b.dataset.i]||{},dst=contexts.find(c=>c.id===l.to);
+    if(!confirm('¿Quitar este préstamo?\n\n'+(dst?ctxLabel(dst):l.to)+' · '+CUR_SYM[CUR]+' '+fmtAR.format(Math.round(l.amt||0))+'\n\nNo se va a generar el movimiento en la otra caja.'))return;
+    edState.loans.splice(+b.dataset.i,1);renderEdLoans();recalcEditor()});
 }
 function renderMovRows(){
   const list=document.getElementById('mvList');
@@ -3435,7 +3455,11 @@ function renderMovRows(){
     row.querySelector('.cpt').oninput=e=>edState.movs[i].cpt=e.target.value;
     row.querySelector('.ref').oninput=e=>edState.movs[i].ref=e.target.value;
     row.querySelector('.amount').oninput=e=>{edState.movs[i].amt=e.target.value;recalcEditor()};
-    row.querySelector('.rmrow').onclick=()=>{edState.movs.splice(i,1);if(!edState.movs.length)edState.movs.push(blankMov());renderMovRows();recalcEditor()};
+    row.querySelector('.rmrow').onclick=()=>{
+      const mv=edState.movs[i];
+      const desc=_descFila([mv.cpt,mv.ref,num(mv.amt)!=null&&num(mv.amt)!==0?(mv.type==='out'?'−':'+')+' '+peso(Math.abs(num(mv.amt))):'']);
+      if(!_confirmarQuitarFila(desc))return;
+      edState.movs.splice(i,1);if(!edState.movs.length)edState.movs.push(blankMov());renderMovRows();recalcEditor()};
   });
 }
 // Parsea un importe tipeado a mano respetando el formato argentino: el punto es
@@ -3552,7 +3576,13 @@ function renderCredMovRows(){
     const amtInput=row.querySelector('input.amount');
     if(amtInput)amtInput.oninput=e=>{edState.credMovs[i].amt=e.target.value;recalcCredit()};
     row.querySelector('.valebtn').onclick=()=>printVale(i);
-    row.querySelector('.rmrow').onclick=()=>{edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
+    row.querySelector('.rmrow').onclick=()=>{
+      const cm=edState.credMovs[i];
+      const desc=_descFila([cm.type==='out'?'Cobro de crédito':'Crédito otorgado',cm.note,cm.cpt,num(cm.amt)?peso(Math.abs(num(cm.amt))):'']);
+      // Un crédito nunca está "en blanco": arrastra el egreso/ingreso de caja que
+      // se genera solo al guardar, así que siempre se pregunta.
+      if(!confirm('¿Quitar este crédito?\n\n'+desc+'\n\nCon él se va también el movimiento de caja que lo acompaña.'))return;
+      edState.credMovs.splice(i,1);renderCredMovRows();recalcCredit()};
   });
 }
 async function unlockCreditRows(){
@@ -3579,7 +3609,11 @@ function renderFisMovRows(){
     const i=+row.dataset.i;
     row.querySelectorAll('.tgl button').forEach(b=>b.onclick=()=>{edState.fisMovs[i].type=b.dataset.t;row.querySelectorAll('.tgl button').forEach(x=>x.classList.remove('on'));b.classList.add('on');recalcFis()});
     row.querySelector('.amount').oninput=e=>{edState.fisMovs[i].amt=e.target.value;recalcFis()};
-    row.querySelector('.rmrow').onclick=()=>{edState.fisMovs.splice(i,1);renderFisMovRows();recalcFis()};
+    row.querySelector('.rmrow').onclick=()=>{
+      const fm=edState.fisMovs[i],a=num(fm.amt);
+      const desc=_descFila([a!=null&&a!==0?(fm.type==='out'?'−':'+')+' '+peso(Math.abs(a)):'']);
+      if(!_confirmarQuitarFila(desc))return;
+      edState.fisMovs.splice(i,1);renderFisMovRows();recalcFis()};
   });
 }
 function recalcFis(){
