@@ -2531,7 +2531,7 @@ function ajustarCreditoHoy(note){
     'Ajuste del '+fechaTxt+' para "'+nombre+'"'+(cpt?' ('+cpt+')':'')+':\n\n'+
     'Crédito:  '+pesoCurS(delta,CUR)+'   → queda en '+pesoCur(nuevoSaldo,CUR)+'\n'+
     'Efectivo: '+pesoCurS(-delta,CUR)+'   ('+(cobro?'ingreso a la caja':'salida de la caja')+')\n\n'+
-    'El saldo total no cambia. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
+    'El saldo de la caja '+(cobro?'sube':'baja')+' '+pesoCur(Math.abs(delta),CUR)+'. Los días anteriores quedan intactos.\n\n¿Confirmás?'))return;
   aplicarAjusteCreditoHoy(iso,delta,nombre,cobro,cpt);
   renderCreditDetailModal();
   toast('Ajuste registrado el '+fechaTxt);
@@ -2545,6 +2545,21 @@ function ajustarCreditoHoy(note){
 function _cptCredito(imp,nombre,cpt){
   const c=(cpt||'').trim();
   return (imp<0?'Cobro de crédito — ':'Crédito otorgado — ')+(nombre||'(sin nombre)')+(c?' · '+c:'');
+}
+// ¿Este movimiento de caja es la contrapartida de ESE crédito? No alcanza con
+// que el importe cierre: tiene que poder atribuirse al crédito, o cualquier gasto
+// del mismo monto cargado ese día taparía la salida automática. Vale si lo generó
+// la app (ref 'Crédito'), si el concepto nombra a la persona, o si el concepto
+// habla de crédito/fiado.
+function _txtPlanoCred(x){
+  return (x==null?'':String(x)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+}
+function _esContrapartidaCredito(m,cn){
+  if(!m||Math.abs((m.imp||0)+cn.imp)>=0.005)return false;
+  if(_txtPlanoCred(m.ref)==='credito')return true;
+  const cpt=_txtPlanoCred(m.cpt),nom=_txtPlanoCred(cn.note);
+  if(nom&&cpt.indexOf(nom)>=0)return true;
+  return /credit|fiad/.test(cpt);
 }
 // Recalcula ingresos/egresos/cantidad de movimientos de un día tras tocar `movs`.
 function _recalcTotalesDia(day){
@@ -2841,11 +2856,20 @@ function creditosSinContrapartida(ctxId,cur){
     const movs=(d.movs||[]).slice();
     (d.credMovs||[]).forEach((cm,idx)=>{
       if(!cm||!cm.imp)return;
-      // Busca un movimiento de caja que compense este crédito y lo "consume",
-      // para que dos créditos iguales el mismo día necesiten dos movimientos.
-      const i=movs.findIndex(m=>Math.abs(m.imp+cm.imp)<0.005);
+      // Busca la contrapartida de ESTE crédito y la "consume", para que dos
+      // créditos iguales el mismo día necesiten dos movimientos. Mismo criterio
+      // que usa saveDay() al generarla: el importe tiene que cerrar Y el
+      // movimiento tiene que ser atribuible al crédito. Buscar sólo por importe
+      // dejaba pasar justo los casos que hay que encontrar: un gasto redondo del
+      // mismo monto ese día hacía de tapadera y el crédito nunca se reportaba.
+      const cn={imp:cm.imp,note:(cm.note||'').trim()};
+      const i=movs.findIndex(m=>_esContrapartidaCredito(m,cn));
       if(i>=0){movs.splice(i,1);return}
-      out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp});
+      // No hay contrapartida atribuible. Si igual existe un movimiento del monto
+      // justo, se avisa: puede ser ése cargado a mano con otro texto, y entonces
+      // agregar el que falta DUPLICARÍA la salida.
+      const dudoso=movs.some(m=>Math.abs((m.imp||0)+cm.imp)<0.005);
+      out.push({iso:d.iso,date:d.date,idx,note:(cm.note||'').trim()||'(sin nombre)',imp:cm.imp,dudoso});
     });
   });
   return out;
@@ -2855,7 +2879,7 @@ function openAuditCreditos(){
   const tot=Math.round(faltan.reduce((s,x)=>s+x.imp,0)*100)/100;
   const filas=faltan.map(f=>`
     <div class="crow" style="align-items:center">
-      <span><b>${f.date}</b> · ${esc(f.note)}</span>
+      <span><b>${f.date}</b> · ${esc(f.note)}${f.dudoso?`<span style="display:block;font-size:11px;color:var(--ink3);line-height:1.35">Revisá ese día: hay un movimiento de ${pesoS(-f.imp)} que podría ser éste cargado a mano. Si es ése, no agregues otro.</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:10px">
         <span class="${f.imp>=0?'pos':'neg'}" style="font-family:var(--mono)">${pesoS(f.imp)}</span>
         <button class="rowact" style="width:auto;padding:0 9px;font-size:11.5px;font-weight:600"
@@ -3611,14 +3635,29 @@ function saveDay(){
   //
   // Dos resguardos que evitan duplicar:
   //  - solo filas nuevas (`!_preexisting`): reeditar un día viejo no re-agrega;
-  //  - solo si no hay ya un movimiento que lo compense: si lo cargaste a mano,
-  //    no se suma otro.
+  //  - solo si no hay ya un movimiento que sea LA CONTRAPARTIDA de ESE crédito:
+  //    si lo cargaste a mano, no se suma otro.
+  //
+  // Ojo con el segundo: hasta v121 alcanzaba con que COINCIDIERA EL IMPORTE
+  // contra cualquier movimiento del día, y sin consumirlo. Con eso, un gasto
+  // redondo del mismo monto (fiás $200.000 el día que pagaste $200.000 de algo
+  // ajeno) hacía que la salida automática NO se generara nunca, y dos créditos
+  // iguales el mismo día se tapaban con un solo movimiento. Reportado por el
+  // usuario: "si genero un crédito tiene que salir automáticamente el dinero y
+  // no genera ese movimiento". Ahora, además del importe, el movimiento tiene
+  // que ser atribuible a ese crédito (lo puso la app, nombra a la persona, o
+  // habla de crédito/fiado) y cada uno se usa una sola vez.
   const credNuevos=(edState.credMovs||[]).filter(cm=>{
     if(cm._preexisting)return false;
     const a=num(cm.amt);
     return a!=null&&a!==0&&(cm.note||'').trim();
   }).map(cm=>({imp:Math.round((cm.type==='out'?-1:1)*Math.abs(num(cm.amt))*100)/100,note:(cm.note||'').trim(),cpt:(cm.cpt||'').trim()}));
-  const sinContrapartida=credNuevos.filter(cn=>!c.movs.some(m=>Math.abs(m.imp+cn.imp)<0.005));
+  const _usados=new Set();
+  const sinContrapartida=credNuevos.filter(cn=>{
+    const i=c.movs.findIndex((m,ix)=>!_usados.has(ix)&&_esContrapartidaCredito(m,cn));
+    if(i>=0){_usados.add(i);return false}
+    return true;
+  });
   if(sinContrapartida.length){
     sinContrapartida.forEach(cn=>{
       c.movs.push({imp:Math.round(-cn.imp*100)/100,
