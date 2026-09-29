@@ -2862,9 +2862,13 @@ function _txtLlano(x){
 }
 function _esContrapartidaDe(m,imp,nombre){
   if(!m||Math.abs((m.imp||0)+imp)>=0.005)return false;
-  if(_txtLlano(m.ref)==='credito')return true;
   const cpt=_txtLlano(m.cpt),n=_txtLlano(nombre);
-  if(n&&cpt.indexOf(n)>=0)return true;
+  if(n&&cpt.indexOf(n)>=0)return true;           // nombra a esta persona
+  // Egreso que generó la app para OTRO crédito: su concepto lleva el nombre de
+  // esa otra persona ("Crédito otorgado — Fulano"), y arriba no coincidió. No es
+  // éste, es de ese otro crédito — tomarlo dejaba a este crédito sin su egreso.
+  if(/^(credito otorgado|cobro de credito)\s*[—-]\s*\S/.test(cpt))return false;
+  if(_txtLlano(m.ref)==='credito')return true;   // de crédito, pero sin nombre
   // Cargado a mano sin el nombre pero diciendo qué es ("fiado", "crédito a
   // cuenta"): alcanza para no duplicar la salida.
   return /credit|fiad/.test(cpt);
@@ -3662,7 +3666,21 @@ function saveDay(){
   // dos créditos iguales el mismo día matcheaban los dos contra el mismo
   // movimiento y uno se quedaba sin su egreso. Mismo criterio que usa la
   // auditoría (`_esContrapartidaDe`), para que las dos no puedan discrepar.
+  //
+  // Primero se reservan los egresos de los créditos que YA estaban en el día
+  // (filas `_preexisting`), que no pasan por `credNuevos` y por lo tanto nunca
+  // consumían el suyo. Sin esta vuelta, agregar un segundo crédito de $200.000 a
+  // un día que ya tenía uno hacía que el nuevo se quedara con el egreso viejo y
+  // no se generara el propio: dos créditos, un solo egreso. Reportado con un día
+  // de $400.000 en créditos y una sola salida de $200.000.
   const _libres=c.movs.slice();
+  (edState.credMovs||[]).forEach(cm=>{
+    if(!cm||!cm._preexisting)return;
+    const a=num(cm.amt);if(a==null||a===0)return;
+    const imp=Math.round((cm.type==='out'?-1:1)*Math.abs(a)*100)/100;
+    const i=_libres.findIndex(m=>_esContrapartidaDe(m,imp,(cm.note||'').trim()));
+    if(i>=0)_libres.splice(i,1);
+  });
   const sinContrapartida=credNuevos.filter(cn=>{
     const i=_libres.findIndex(m=>_esContrapartidaDe(m,cn.imp,cn.note));
     if(i>=0){_libres.splice(i,1);return false}
