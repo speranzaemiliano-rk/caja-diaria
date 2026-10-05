@@ -416,7 +416,7 @@ tbody tr:last-child td{border-bottom:none}
 #credMvList .rmrow,#credMvList .valebtn{width:36px;flex:0 0 36px}
 .addrow{background:none;border:1px dashed var(--line2);color:var(--ink2);font-family:inherit;font-weight:600;font-size:13px;padding:10px;border-radius:10px;cursor:pointer;width:100%;transition:.15s;margin-top:4px}
 .addrow:hover{border-color:var(--gold);color:var(--gold2);background:rgba(212,166,74,.05)}
-.ed-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 4px;padding:16px;background:var(--bg);border:1px solid var(--line);border-radius:13px}
+.ed-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px;margin:20px 0 4px;padding:16px;background:var(--bg);border:1px solid var(--line);border-radius:13px}
 .ed-summary div b{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);font-weight:600;display:block}
 .ed-summary div span{font-size:18px;font-weight:700;font-family:'Roboto Mono'}
 .ed-foot{display:flex;gap:12px;padding:18px 26px;border-top:1px solid var(--line);align-items:center}
@@ -3304,7 +3304,9 @@ function openEditor(existing){
         <div><b>Ingresos</b><span class="pos" id="s_in">${symLabel} 0</span></div>
         <div><b>Egresos</b><span class="neg" id="s_out">${symLabel} 0</span></div>
         <div><b>Flujo neto</b><span id="s_net">${symLabel} 0</span></div>
-        <div><b>Saldo final</b><span style="color:var(--gold2)" id="s_sf">${symLabel} 0</span></div>
+        <div><b>Saldo final · efectivo</b><span style="color:var(--gold2)" id="s_sf">${symLabel} 0</span></div>
+        <div id="s_credBox" style="display:none"><b>Créditos a cobrar</b><span style="color:var(--gold2)" id="s_cred">${symLabel} 0</span></div>
+        <div id="s_totBox" style="display:none"><b>Total</b><span style="color:var(--gold2)" id="s_tot">${symLabel} 0</span></div>
       </div>
       <div class="fgrid" style="grid-template-columns:1fr;margin-top:16px">
         <div class="field"><label>Cheques / valores (${symLabel}) — opcional</label><input class="amt" id="f_chq" value="${m.chq}" placeholder="0"></div>
@@ -3607,11 +3609,20 @@ async function unlockCreditRows(){
     renderCredMovRows();
   }
 }
-function recalcCredit(){
+// Saldo de créditos con el que cerraría el día: el que venía más lo que se
+// esté cargando ahora. Lo usan el casillero de abajo y el resumen de arriba.
+function credSaldoEditor(){
   let sum=0;
   (edState.credMovs||[]).forEach(cm=>{const a=num(cm.amt);if(a==null)return;sum+=(cm.type==='out'?-1:1)*Math.abs(a)});
-  const newBal=Math.round((edState.credSi+sum)*100)/100;
-  const el=document.getElementById('credNewDisplay');if(el)el.textContent=peso(newBal);
+  return Math.round(((edState.credSi||0)+sum)*100)/100;
+}
+function recalcCredit(){
+  const el=document.getElementById('credNewDisplay');
+  if(el)el.textContent=peso(credSaldoEditor());
+  // El resumen de arriba muestra el crédito y el total, así que un cambio acá
+  // también lo mueve. recalcEditor() no llama de vuelta a esta función: no hay
+  // vuelta infinita.
+  recalcEditor();
 }
 function renderFisMovRows(){
   const list=document.getElementById('fisMvList');if(!list)return;
@@ -3657,6 +3668,21 @@ function recalcEditor(){
   document.getElementById('s_out').textContent=pesoS(egr);
   const net=Math.round((ing+egr)*100)/100,ne=document.getElementById('s_net');ne.textContent=pesoS(net);ne.className=net>=0?'pos':'neg';
   document.getElementById('s_sf').textContent=peso(sf);
+  // Misma distinción que el encabezado: el saldo del día es el EFECTIVO, el
+  // crédito va aparte y el total los junta. Al fiar se ve bajar uno y subir el
+  // otro en el mismo momento, en vez de que todo pase detrás de un número solo.
+  // Si el día no tiene créditos ni los arrastra, los dos casilleros se esconden.
+  const cred=credSaldoEditor();
+  const hay=Math.abs(cred)>0.005;
+  const cb=document.getElementById('s_credBox'),tb=document.getElementById('s_totBox');
+  if(cb&&tb){
+    cb.style.display=hay?'':'none';
+    tb.style.display=hay?'':'none';
+    if(hay){
+      document.getElementById('s_cred').textContent=peso(cred);
+      document.getElementById('s_tot').textContent=peso(Math.round((sf+cred)*100)/100);
+    }
+  }
 }
 function saveDay(){
   const c=computeEditor(),iso=document.getElementById('f_date').value,err=document.getElementById('edErr');
