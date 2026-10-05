@@ -1438,8 +1438,24 @@ function renderAll(){
   const sc=document.getElementById('savedCount');
   if(sc)sc.innerHTML=userDays.length?(ic('save',13)+' '+userDays.length+' día(s) guardado(s) por vos'+(storageOK?'':' (no persiste aquí)')):'';
   document.getElementById('ctxFootNote').innerHTML=(activeContextId==='default'&&CUR==='ARS')?'Generado desde el <span class="hl">histórico importado</span>':'';
+  // Tres números que son tres cosas distintas y conviene no mezclar: lo que hay
+  // en el cajón, lo que te deben, y la suma. El saldo de la caja es el EFECTIVO
+  // (fiar lo baja, v121); el crédito va aparte y el total los junta. Si la caja
+  // nunca fió, los tres serían el mismo número: ahí se muestra uno solo.
+  const _efe = last ? (last.sf || 0) : 0;
+  const _cre = last ? (last.cred || 0) : 0;
+  const _tot = Math.round((_efe + _cre) * 100) / 100;
+  const _hayCred = Math.abs(_cre) > 0.005;
   document.getElementById('ticker').innerHTML=`
-    <div class="tk"><b>Saldo actual</b><span class="v go mono">${last?peso(last.sf):peso(0)}</span></div>
+    ${_hayCred ? `
+    <div class="tk" title="Lo que hay en el cajón más lo que te deben">
+      <b>Total</b><span class="v go mono">${peso(_tot)}</span></div>
+    <div class="tk" title="La plata que tenés en la caja">
+      <b>Efectivo en caja</b><span class="v mono">${peso(_efe)}</span></div>
+    <div class="tk" style="cursor:pointer" onclick="${last?`openCreditDetail('${last.iso}')`:''}"
+         title="Lo que te deben. Tocá para ver quién (pide clave)">
+      <b>Créditos a cobrar</b><span class="v mono" style="color:var(--gold2)">${peso(_cre)}</span></div>`
+    : `<div class="tk"><b>Saldo actual</b><span class="v go mono">${peso(_efe)}</span></div>`}
     <div class="tk"><b>Caja activa</b><span class="v mono">${CUR==='ARS'?'$ Pesos':'US$ Dólares'}</span></div>
     <div class="tk"><b>Días registrados</b><span class="v mono">${real.length}</span></div>`;
   renderKpis();renderDayMovs();renderDonut();renderDiffList();renderMonthBars();drawLine(currentRange);
@@ -1524,10 +1540,10 @@ function renderKpis(){
   const realCaja=d.fis!=null?(d.fis||0):null;
   const difColor=d.fis==null?'var(--ink3)':(isWarn(d)?'var(--red)':'var(--green)');
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">Efectivo · te deben ${peso(siCred)} aparte</div></div>
+    <div class="kpi"><div class="lab">▸ Saldo inicial</div><div class="num mono">${peso(d.si)}</div><div class="meta">${d.date} · ${d.wd}</div><div class="meta mono">${siCred?('Te deben '+peso(siCred)+' · Total '+peso(Math.round((d.si+siCred)*100)/100)):'Efectivo'}</div></div>
     <div class="kpi"><div class="lab pos">▲ Ingresos del día</div><div class="num mono pos">${peso(d.ing||0)}</div><div class="meta">${nin} ingreso(s)</div><div class="meta mono">${credOut?'Incluye '+peso(credOut)+' de créditos cobrados':'Efectivo'}</div></div>
     <div class="kpi"><div class="lab neg">▼ Egresos del día</div><div class="num mono neg">${pesoS(d.egr||0)}</div><div class="meta">${nout} egreso(s)</div><div class="meta mono">${credIn?'Incluye '+pesoS(-credIn)+' de créditos otorgados':'Efectivo'}</div></div>
-    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día · efectivo</div><div class="meta mono">Te deben ${peso(sfCred)} aparte</div></div>
+    <div class="kpi acc"><div class="lab">◆ Saldo final</div><div class="num mono">${peso(d.sf)}</div><div class="meta">cierre del día · efectivo</div><div class="meta mono">${sfCred?('Te deben '+peso(sfCred)+' · Total '+peso(Math.round((d.sf+sfCred)*100)/100)):'Efectivo'}</div></div>
     <div class="kpi small"><div class="lab">⚖ Diferencia de caja</div><div class="num mono" style="color:${difColor}">${d.fis!=null?pesoS(d.dif):'—'}</div><div class="meta">${d.fis!=null?'Según sistema '+peso(d.sf):'Sin arqueo cargado'}</div>${d.fis!=null?`<div class="meta mono">Caja real ${peso(realCaja)}</div>`:''}</div>`;
 }
 let dayMovsSelecting=false,daySelSet=new Set(),_daySelIso=null;
